@@ -7,34 +7,36 @@ import { api } from '../services/api';
 import type { ChatMessage, FocusEvent } from '../services/api';
 
 // --- 3D Avatar Subcomponent ---
-interface RaccoonProps {
+interface BunnyProps {
   emotion: 'neutral' | 'angry' | 'sad';
 }
 
-const RaccoonModel: React.FC<RaccoonProps> = ({ emotion }) => {
-  // Load model from public folder
-  const { scene } = useGLTF('/raccoon.glb');
+const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
+  const { scene } = useGLTF('/bunny.glb');
   const modelRef = useRef<THREE.Group>(null);
 
-  // References to bones and shapekeys for direct manipulation
   const earLBone = useRef<THREE.Bone | null>(null);
   const earRBone = useRef<THREE.Bone | null>(null);
   const eyeLBone = useRef<THREE.Bone | null>(null);
   const eyeRBone = useRef<THREE.Bone | null>(null);
+  const eyebrowLBone = useRef<THREE.Bone | null>(null);
+  const eyebrowRBone = useRef<THREE.Bone | null>(null);
+  const headBone = useRef<THREE.Bone | null>(null);
   const meshRef = useRef<THREE.SkinnedMesh | null>(null);
 
-  // Find bones and mesh from graph
   useEffect(() => {
     scene.traverse((obj) => {
       if (obj.name === 'Ear.L' && obj instanceof THREE.Bone) earLBone.current = obj;
       if (obj.name === 'Ear.R' && obj instanceof THREE.Bone) earRBone.current = obj;
       if (obj.name === 'Eye.L' && obj instanceof THREE.Bone) eyeLBone.current = obj;
       if (obj.name === 'Eye.R' && obj instanceof THREE.Bone) eyeRBone.current = obj;
-      if (obj.name === 'Raccoon' && obj instanceof THREE.SkinnedMesh) meshRef.current = obj;
+      if (obj.name === 'Eyebrow.L' && obj instanceof THREE.Bone) eyebrowLBone.current = obj;
+      if (obj.name === 'Eyebrow.R' && obj instanceof THREE.Bone) eyebrowRBone.current = obj;
+      if (obj.name === 'Head' && obj instanceof THREE.Bone) headBone.current = obj;
+      if (obj.name === 'BrownBunny' && obj instanceof THREE.SkinnedMesh) meshRef.current = obj;
     });
   }, [scene]);
 
-  // Timers for idle animations
   const blinkTimer = useRef(0);
   const blinkDuration = useRef(0.15);
   const isBlinking = useRef(false);
@@ -43,30 +45,20 @@ const RaccoonModel: React.FC<RaccoonProps> = ({ emotion }) => {
   const earTwitchSide = useRef<'L' | 'R'>('L');
 
   useFrame((state, delta) => {
-    // 1. Blinking Logic
+    // Blinking
     blinkTimer.current += delta;
     if (!isBlinking.current && blinkTimer.current > 3 + Math.random() * 4) {
       isBlinking.current = true;
       blinkTimer.current = 0;
     }
 
-    if (isBlinking.current && meshRef.current && meshRef.current.morphTargetInfluences) {
+    if (isBlinking.current && meshRef.current?.morphTargetInfluences) {
       const blinkIdx = meshRef.current.morphTargetDictionary?.['Blink'];
       if (blinkIdx !== undefined) {
         if (blinkTimer.current < blinkDuration.current) {
-          // Closing
-          meshRef.current.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(
-            meshRef.current.morphTargetInfluences[blinkIdx],
-            1,
-            delta * 25
-          );
+          meshRef.current.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(meshRef.current.morphTargetInfluences[blinkIdx], 1, delta * 25);
         } else if (blinkTimer.current < blinkDuration.current * 2) {
-          // Opening
-          meshRef.current.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(
-            meshRef.current.morphTargetInfluences[blinkIdx],
-            0,
-            delta * 25
-          );
+          meshRef.current.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(meshRef.current.morphTargetInfluences[blinkIdx], 0, delta * 25);
         } else {
           meshRef.current.morphTargetInfluences[blinkIdx] = 0;
           isBlinking.current = false;
@@ -75,7 +67,7 @@ const RaccoonModel: React.FC<RaccoonProps> = ({ emotion }) => {
       }
     }
 
-    // 2. Ear Twitching Logic (Idle animation)
+    // Ear Twitching
     earTwitchTimer.current += delta;
     if (!isEarTwitching.current && earTwitchTimer.current > 5 + Math.random() * 5) {
       isEarTwitching.current = true;
@@ -96,41 +88,47 @@ const RaccoonModel: React.FC<RaccoonProps> = ({ emotion }) => {
       }
     }
 
-    // 3. Eye micro-movement (Look slightly towards user/camera)
+    // Eye and Head Micro-movement
+    const t = state.clock.getElapsedTime();
+    const lookX = Math.sin(t * 0.5) * 0.05;
+    const lookY = Math.cos(t * 0.3) * 0.05;
+    
     if (eyeLBone.current && eyeRBone.current) {
-      const t = state.clock.getElapsedTime();
-      const lookX = Math.sin(t * 0.5) * 0.05;
-      const lookY = Math.cos(t * 0.3) * 0.05;
       eyeLBone.current.rotation.x = lookX;
       eyeLBone.current.rotation.y = lookY;
       eyeRBone.current.rotation.x = lookX;
       eyeRBone.current.rotation.y = lookY;
     }
+    
+    if (headBone.current) {
+      headBone.current.rotation.y = Math.sin(t * 0.4) * 0.03;
+      headBone.current.rotation.z = Math.cos(t * 0.6) * 0.02;
+    }
 
-    // 4. Update expression shape keys based on current emotion
-    if (meshRef.current && meshRef.current.morphTargetInfluences) {
+    // Eyebrow and Emotion Shapekeys
+    let targetEyebrowZ = 0;
+    if (emotion === 'angry') targetEyebrowZ = -0.2;
+    if (emotion === 'sad') targetEyebrowZ = 0.2;
+
+    if (eyebrowLBone.current) eyebrowLBone.current.rotation.z = THREE.MathUtils.lerp(eyebrowLBone.current.rotation.z, targetEyebrowZ, delta * 5);
+    if (eyebrowRBone.current) eyebrowRBone.current.rotation.z = THREE.MathUtils.lerp(eyebrowRBone.current.rotation.z, -targetEyebrowZ, delta * 5);
+
+    if (meshRef.current?.morphTargetInfluences) {
       const angryIdx = meshRef.current.morphTargetDictionary?.['Angry'];
       const sadIdx = meshRef.current.morphTargetDictionary?.['Sad'];
 
       if (angryIdx !== undefined) {
-        meshRef.current.morphTargetInfluences[angryIdx] = THREE.MathUtils.lerp(
-          meshRef.current.morphTargetInfluences[angryIdx],
-          emotion === 'angry' ? 1 : 0,
-          delta * 8
-        );
+        meshRef.current.morphTargetInfluences[angryIdx] = THREE.MathUtils.lerp(meshRef.current.morphTargetInfluences[angryIdx], emotion === 'angry' ? 1 : 0, delta * 8);
       }
       if (sadIdx !== undefined) {
-        meshRef.current.morphTargetInfluences[sadIdx] = THREE.MathUtils.lerp(
-          meshRef.current.morphTargetInfluences[sadIdx],
-          emotion === 'sad' ? 1 : 0,
-          delta * 8
-        );
+        meshRef.current.morphTargetInfluences[sadIdx] = THREE.MathUtils.lerp(meshRef.current.morphTargetInfluences[sadIdx], emotion === 'sad' ? 1 : 0, delta * 8);
       }
     }
   });
 
   return <primitive ref={modelRef} object={scene} position={[0, -45, 0]} />;
 };
+
 
 // Loader placeholder for model load
 const AvatarLoader = () => (
@@ -411,7 +409,7 @@ export const StudyRoom: React.FC = () => {
             </div>
           </div>
 
-          {/* 3D Raccoon Avatar Box */}
+          {/* 3D Bunny Avatar Box */}
           <div className="pixel-panel" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <h3 style={{ fontFamily: 'var(--font-retro)', fontSize: '1.5rem', marginBottom: '8px', color: 'var(--c-red-brown)' }}>
               Study Buddy (Tutor)
@@ -443,7 +441,7 @@ export const StudyRoom: React.FC = () => {
                   <directionalLight position={[10, 10, 10]} intensity={1.5} />
                   <pointLight position={[-10, -10, -10]} intensity={1} />
                   <Suspense fallback={<AvatarLoader />}>
-                    <RaccoonModel emotion={avatarEmotion} />
+                    <BunnyModel emotion={avatarEmotion} />
                   </Suspense>
                   <OrbitControls enableZoom={false} enablePan={false} maxPolarAngle={Math.PI / 2.2} minPolarAngle={Math.PI / 2.5} />
                 </Canvas>
@@ -497,7 +495,7 @@ export const StudyRoom: React.FC = () => {
                     }}
                   >
                     <div style={{ fontSize: '0.75rem', color: 'var(--c-sand-dark)', marginBottom: '3px' }}>
-                      {m.role === 'user' ? 'You' : 'Raccoon Tutor'}
+                      {m.role === 'user' ? 'You' : 'Bunny Tutor'}
                     </div>
                     {m.text}
                   </div>
