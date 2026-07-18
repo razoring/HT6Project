@@ -12,7 +12,7 @@ interface BunnyProps {
 }
 
 const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
-  const { scene } = useGLTF('/bunny.glb');
+  const { scene } = useGLTF('/bunny.glb?v=3');
   const modelRef = useRef<THREE.Group>(null);
 
   const earLBone = useRef<THREE.Bone | null>(null);
@@ -22,18 +22,28 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
   const eyebrowLBone = useRef<THREE.Bone | null>(null);
   const eyebrowRBone = useRef<THREE.Bone | null>(null);
   const headBone = useRef<THREE.Bone | null>(null);
+  const armLBone = useRef<THREE.Bone | null>(null);
+  const armRBone = useRef<THREE.Bone | null>(null);
+  const torsoBone = useRef<THREE.Bone | null>(null);
   const meshRef = useRef<THREE.SkinnedMesh | null>(null);
 
   useEffect(() => {
     scene.traverse((obj) => {
-      if (obj.name === 'Ear.L' && obj instanceof THREE.Bone) earLBone.current = obj;
-      if (obj.name === 'Ear.R' && obj instanceof THREE.Bone) earRBone.current = obj;
-      if (obj.name === 'Eye.L' && obj instanceof THREE.Bone) eyeLBone.current = obj;
-      if (obj.name === 'Eye.R' && obj instanceof THREE.Bone) eyeRBone.current = obj;
-      if (obj.name === 'Eyebrow.L' && obj instanceof THREE.Bone) eyebrowLBone.current = obj;
-      if (obj.name === 'Eyebrow.R' && obj instanceof THREE.Bone) eyebrowRBone.current = obj;
-      if (obj.name === 'Head' && obj instanceof THREE.Bone) headBone.current = obj;
-      if (obj.name === 'BrownBunny' && obj instanceof THREE.SkinnedMesh) meshRef.current = obj;
+      if ((obj as THREE.Bone).isBone) {
+        if (obj.name.includes('Ear.L')) earLBone.current = obj as THREE.Bone;
+        if (obj.name.includes('Ear.R')) earRBone.current = obj as THREE.Bone;
+        if (obj.name.includes('Eye.L')) eyeLBone.current = obj as THREE.Bone;
+        if (obj.name.includes('Eye.R')) eyeRBone.current = obj as THREE.Bone;
+        if (obj.name.includes('Eyebrow.L')) eyebrowLBone.current = obj as THREE.Bone;
+        if (obj.name.includes('Eyebrow.R')) eyebrowRBone.current = obj as THREE.Bone;
+        if (obj.name.includes('Head')) headBone.current = obj as THREE.Bone;
+        if (obj.name.includes('Arm.L')) armLBone.current = obj as THREE.Bone;
+        if (obj.name.includes('Arm.R')) armRBone.current = obj as THREE.Bone;
+        if (obj.name.includes('Torso')) torsoBone.current = obj as THREE.Bone;
+      }
+      if ((obj as THREE.SkinnedMesh).isSkinnedMesh) {
+        meshRef.current = obj as THREE.SkinnedMesh;
+      }
     });
   }, [scene]);
 
@@ -105,6 +115,11 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
       headBone.current.rotation.z = Math.cos(t * 0.6) * 0.02;
     }
 
+    // Body and Arm idle movement
+    if (torsoBone.current) torsoBone.current.scale.y = 1 + Math.sin(t * 2) * 0.02;
+    if (armLBone.current) armLBone.current.rotation.z = Math.sin(t * 1.5) * 0.05;
+    if (armRBone.current) armRBone.current.rotation.z = Math.sin(t * 1.5 + Math.PI) * 0.05;
+
     // Eyebrow and Emotion Shapekeys
     let targetEyebrowZ = 0;
     if (emotion === 'angry') targetEyebrowZ = -0.2;
@@ -126,7 +141,7 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
     }
   });
 
-  return <primitive ref={modelRef} object={scene} position={[0, -45, 0]} />;
+  return <primitive ref={modelRef} object={scene} position={[0, -45, 0]} scale={[12, 12, 12]} />;
 };
 
 
@@ -443,7 +458,7 @@ export const StudyRoom: React.FC = () => {
                   <Suspense fallback={<AvatarLoader />}>
                     <BunnyModel emotion={avatarEmotion} />
                   </Suspense>
-                  <OrbitControls enableZoom={false} enablePan={false} maxPolarAngle={Math.PI / 2.2} minPolarAngle={Math.PI / 2.5} />
+                  <OrbitControls enableZoom={false} enablePan={false} maxPolarAngle={Math.PI / 2} minPolarAngle={Math.PI / 2} />
                 </Canvas>
               </div>
 
