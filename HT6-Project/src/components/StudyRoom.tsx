@@ -7,6 +7,10 @@ import { SkeletonUtils } from 'three-stdlib';
 import { api } from '../services/api';
 import type { ChatMessage, FocusEvent } from '../services/api';
 
+// working
+import QuestProgress from '../components/QuestBar';
+
+
 // --- 3D Avatar Subcomponent ---
 interface BunnyProps {
   emotion: 'neutral' | 'angry' | 'sad';
@@ -364,7 +368,7 @@ export const StudyRoom: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', height: '100vh', backgroundColor: 'var(--bg-primary)' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', height: '100vh', backgroundColor: 'var(--bg-primary)' }}>
       
       {/* 1. Quest Sidebar (Preserved placeholder for teammate) */}
       <div
@@ -381,23 +385,8 @@ export const StudyRoom: React.FC = () => {
           <h2 style={{ fontFamily: 'var(--font-retro)', fontSize: '2rem', color: 'var(--c-brown-dark)', marginBottom: '15px' }}>
             Quests
           </h2>
-          <div
-            style={{
-              border: '3px dashed var(--c-sand-med)',
-              borderRadius: '8px',
-              padding: '20px 10px',
-              textAlign: 'center',
-              backgroundColor: 'rgba(255,255,255,0.2)',
-              color: 'var(--c-sand-dark)',
-              fontSize: '0.9rem',
-              fontWeight: 800,
-            }}
-          >
-            Quests roadmap placeholder<br />
-            <span style={{ fontSize: '0.8rem', fontWeight: 400 }}>
-              (Teammate implementation)
-            </span>
-          </div>
+          <QuestProgress documentId={documentId || ''} />
+
         </div>
 
         <button className="pixel-button" onClick={() => navigate('/home')} style={{ width: '100%', justifyContent: 'center' }}>

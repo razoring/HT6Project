@@ -28,6 +28,20 @@ export interface ChatMessage {
   created_at: string;
 }
 
+//////////////// QUEST INFORMATION EXPORTS 
+export interface Quest {
+  id: string;
+  document_id: string;
+  user_id: string;
+  title: string;
+  summary: string;
+  order: number;
+  status: "locked" | "active" | "done";
+}
+
+
+///////////////
+
 export const api = {
   async listDocuments(userId?: string): Promise<Document[]> {
     const url = userId ? `${API_BASE_URL}/documents?user_id=${userId}` : `${API_BASE_URL}/documents`;
@@ -91,4 +105,30 @@ export const api = {
     if (!res.ok) throw new Error('Failed to fetch chat history');
     return res.json();
   },
+
+
+  //Working, hope it doesnt break the website 
+  //fetching quest list 
+  async listQuests(documentId: string): Promise<Quest[]> {
+    const res = await fetch(`${API_BASE_URL}/quests/document/${documentId}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`API error ${res.status}: ${text}`);
+    }
+    return res.json();
+  },
+
+  async completeQuest(questId: string): Promise<Quest> {
+    const res = await fetch(`${API_BASE_URL}/quests/${questId}/complete`, {
+      method: "PATCH",
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`API error ${res.status}: ${text}`);
+    }
+    return res.json();
+  },
+  
+
+
 };
