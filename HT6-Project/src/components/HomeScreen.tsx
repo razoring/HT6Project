@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth0 } from '@auth0/auth0-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import type { Document } from '../services/api';
@@ -11,6 +12,7 @@ export const HomeScreen: React.FC = () => {
   const [uploading, setUploading] = useState<boolean>(false);
   const [dragActive, setDragActive] = useState<boolean>(false);
   const navigate = useNavigate();
+  const { logout, user } = useAuth0();
 
   useEffect(() => {
     fetchSessions();
@@ -70,11 +72,26 @@ export const HomeScreen: React.FC = () => {
 
   return (
     <div style={{ maxWidth: '1000px', margin: '40px auto', padding: '0 20px' }}>
-      <header style={{ textAlign: 'center', marginBottom: '40px' }}>
-        <h1 className="pixel-title">Cozy Study Room</h1>
-        <p style={{ fontSize: '1.2rem', color: 'var(--c-sand-dark)', fontWeight: 600 }}>
-          Your Animal Crossing-inspired virtual learning space
-        </p>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px', marginBottom: '40px' }}>
+        <div style={{ textAlign: 'left' }}>
+          <h1 className="pixel-title">Cozy Study Room</h1>
+          <p style={{ fontSize: '1.2rem', color: 'var(--c-sand-dark)', fontWeight: 600 }}>
+            Your Animal Crossing-inspired virtual learning space
+          </p>
+          {user?.email ? (
+            <p style={{ marginTop: '10px', color: 'var(--c-brown-dark)', fontWeight: 800 }}>
+              Signed in as {user.email}
+            </p>
+          ) : null}
+        </div>
+
+        <button
+          className="pixel-button"
+          onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          Log out
+        </button>
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
