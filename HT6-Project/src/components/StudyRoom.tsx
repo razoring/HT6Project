@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { useGLTF, OrbitControls } from '@react-three/drei';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { useGLTF, Center } from '@react-three/drei';
 import * as THREE from 'three';
 import { SkeletonUtils } from 'three-stdlib';
 import { api } from '../services/api';
@@ -73,16 +73,18 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
     }
 
     meshRefs.current.forEach((mesh) => {
-      if (isBlinking.current && mesh.morphTargetInfluences) {
-        const blinkIdx = mesh.morphTargetDictionary?.['Blink'];
-        if (blinkIdx !== undefined) {
+      const blinkIdx = mesh.morphTargetDictionary?.['Blink'];
+      if (blinkIdx !== undefined) {
+        if (isBlinking.current) {
           if (blinkTimer.current < blinkDuration.current) {
-            mesh.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(mesh.morphTargetInfluences[blinkIdx], 1, delta * 25);
+            mesh.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(mesh.morphTargetInfluences[blinkIdx], 1.5, delta * 30);
           } else if (blinkTimer.current < blinkDuration.current * 2) {
-            mesh.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(mesh.morphTargetInfluences[blinkIdx], 0, delta * 25);
+            mesh.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(mesh.morphTargetInfluences[blinkIdx], 0, delta * 30);
           } else {
             mesh.morphTargetInfluences[blinkIdx] = 0;
           }
+        } else {
+          mesh.morphTargetInfluences[blinkIdx] = 0;
         }
       }
     });
@@ -94,7 +96,7 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
 
     // Ear Twitching
     earTwitchTimer.current += delta;
-    if (!isEarTwitching.current && earTwitchTimer.current > 2 + Math.random() * 3) {
+    if (!isEarTwitching.current && earTwitchTimer.current > 8 + Math.random() * 7) {
       isEarTwitching.current = true;
       earTwitchTimer.current = 0;
       const rand = Math.random();
@@ -108,11 +110,12 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
       if (earTwitchSide.current === 'L' || earTwitchSide.current === 'BOTH') bones.push(earLBone.current);
       if (earTwitchSide.current === 'R' || earTwitchSide.current === 'BOTH') bones.push(earRBone.current);
       
-      if (earTwitchTimer.current < 0.4) {
-        const rotation = Math.sin(earTwitchTimer.current * 50) * 0.3;
+      if (earTwitchTimer.current < 0.3) {
+        // Soft, single twitch pulse
+        const rotation = Math.sin(earTwitchTimer.current * 10) * 0.1;
         bones.forEach(bone => { 
           if (bone) {
-            bone.rotation.x = rotation;
+            bone.rotation.x = 0;
             bone.rotation.z = rotation;
           } 
         });
@@ -145,10 +148,8 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
       headBone.current.rotation.z = Math.cos(t * 0.6) * 0.02;
     }
 
-    // Body and Arm idle movement
+    // Body idle movement
     if (torsoBone.current) torsoBone.current.scale.y = 1 + Math.sin(t * 2) * 0.02;
-    if (armLBone.current) armLBone.current.rotation.z = Math.sin(t * 1.5) * 0.05;
-    if (armRBone.current) armRBone.current.rotation.z = Math.sin(t * 1.5 + Math.PI) * 0.05;
 
     // Emotion Shapekeys
     meshRefs.current.forEach((mesh) => {
@@ -166,7 +167,7 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
     });
   });
 
-  return <primitive ref={modelRef} object={clonedScene} position={[0, -45, 0]} scale={[12, 12, 12]} />;
+  return <primitive ref={modelRef} object={clonedScene} position={[30, -45, 0]} scale={[12, 12, 12]} />;
 };
 
 
@@ -511,7 +512,6 @@ export const StudyRoom: React.FC = () => {
                   <Suspense fallback={<AvatarLoader />}>
                     <BunnyModel emotion={avatarEmotion} />
                   </Suspense>
-                  <OrbitControls enableZoom={false} enablePan={false} maxPolarAngle={Math.PI / 2} minPolarAngle={Math.PI / 2} />
                 </Canvas>
               </div>
 
