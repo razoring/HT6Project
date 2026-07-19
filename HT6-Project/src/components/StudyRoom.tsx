@@ -747,52 +747,57 @@ export const StudyRoom: React.FC = () => {
           if (updatedMetrics.distraction > 50) sessionStatsRef.current.distractedFrames += 1;
           if (updatedMetrics.struggling > 50) sessionStatsRef.current.strugglingFrames += 1;
 
-          if (updatedMetrics.struggling > 50) {
-            setAvatarEmotion('sad');
-            strugglingScoreRef.current += 1;
-            if (strugglingScoreRef.current >= 100) { // 10 seconds at 10fps
-              strugglingScoreRef.current = 0;
-              if (currentAudioRef.current?.paused ?? true) {
-                const msgs = [
-                  "Do you need any help with this material?",
-                  "You look a bit confused. Want me to explain it differently?",
-                  "If this is too difficult, we can break it down into smaller steps."
-                ];
-                const msg = msgs[Math.floor(Math.random() * msgs.length)];
-                const tempAvatarMsg: ChatMessage = { id: Math.random().toString(), quest_id: '', role: 'avatar', text: msg, created_at: new Date().toISOString() };
-                setMessages(prev => [...prev, tempAvatarMsg]);
-                api.injectChatMessage('', documentId || '', msg).catch(err => console.error('Failed to inject TTS message:', err));
-                playTTS(msg);
-              }
-            }
+          if (isAvatarTalkingRef.current) {
+            strugglingScoreRef.current = 0;
+            distractionScoreRef.current = 0;
           } else {
-            strugglingScoreRef.current = Math.max(0, strugglingScoreRef.current - 1);
-          }
-
-          if (updatedMetrics.distraction > 50) {
-            setAvatarEmotion('angry');
-            distractionScoreRef.current += 1;
-            if (distractionScoreRef.current >= 100) { // 10 seconds at 10fps
-              distractionScoreRef.current = 0;
-              if (currentAudioRef.current?.paused ?? true) {
-                const msgs = [
-                  "Hey, are you still paying attention to the material?",
-                  "Let's try to focus on this section for a bit longer.",
-                  "Don't lose focus now, you're doing great!"
-                ];
-                const msg = msgs[Math.floor(Math.random() * msgs.length)];
-                const tempAvatarMsg: ChatMessage = { id: Math.random().toString(), quest_id: '', role: 'avatar', text: msg, created_at: new Date().toISOString() };
-                setMessages(prev => [...prev, tempAvatarMsg]);
-                api.injectChatMessage('', documentId || '', msg).catch(err => console.error('Failed to inject TTS message:', err));
-                playTTS(msg);
+            if (updatedMetrics.struggling > 50) {
+              setAvatarEmotion('sad');
+              strugglingScoreRef.current += 1;
+              if (strugglingScoreRef.current >= 100) { // 10 seconds at 10fps
+                strugglingScoreRef.current = 0;
+                if (currentAudioRef.current?.paused ?? true) {
+                  const msgs = [
+                    "Do you need any help with this material?",
+                    "You look a bit confused. Want me to explain it differently?",
+                    "If this is too difficult, we can break it down into smaller steps."
+                  ];
+                  const msg = msgs[Math.floor(Math.random() * msgs.length)];
+                  const tempAvatarMsg: ChatMessage = { id: Math.random().toString(), quest_id: '', role: 'avatar', text: msg, created_at: new Date().toISOString() };
+                  setMessages(prev => [...prev, tempAvatarMsg]);
+                  api.injectChatMessage('', documentId || '', msg).catch(err => console.error('Failed to inject TTS message:', err));
+                  playTTS(msg);
+                }
               }
+            } else {
+              strugglingScoreRef.current = Math.max(0, strugglingScoreRef.current - 1);
             }
-          } else {
-            distractionScoreRef.current = Math.max(0, distractionScoreRef.current - 1);
-          }
 
-          if (updatedMetrics.struggling <= 50 && updatedMetrics.distraction <= 50) {
-            setAvatarEmotion('neutral');
+            if (updatedMetrics.distraction > 50) {
+              setAvatarEmotion('angry');
+              distractionScoreRef.current += 1;
+              if (distractionScoreRef.current >= 100) { // 10 seconds at 10fps
+                distractionScoreRef.current = 0;
+                if (currentAudioRef.current?.paused ?? true) {
+                  const msgs = [
+                    "Hey, are you still paying attention to the material?",
+                    "Let's try to focus on this section for a bit longer.",
+                    "Don't lose focus now, you're doing great!"
+                  ];
+                  const msg = msgs[Math.floor(Math.random() * msgs.length)];
+                  const tempAvatarMsg: ChatMessage = { id: Math.random().toString(), quest_id: '', role: 'avatar', text: msg, created_at: new Date().toISOString() };
+                  setMessages(prev => [...prev, tempAvatarMsg]);
+                  api.injectChatMessage('', documentId || '', msg).catch(err => console.error('Failed to inject TTS message:', err));
+                  playTTS(msg);
+                }
+              }
+            } else {
+              distractionScoreRef.current = Math.max(0, distractionScoreRef.current - 1);
+            }
+
+            if (updatedMetrics.struggling <= 50 && updatedMetrics.distraction <= 50) {
+              setAvatarEmotion('neutral');
+            }
           }
         }
       } catch (err) {
@@ -967,8 +972,8 @@ export const StudyRoom: React.FC = () => {
         const sum = dataArray.reduce((a, b) => a + b, 0);
         const avg = sum / dataArray.length;
 
-        // If camera is on, use SmartSpectra mouth movement. Otherwise fallback to raw volume.
-        const speechDetected = cameraActive ? (isSdkTalkingRef.current && avg > 2) : (avg > 15);
+        // Use raw volume for Voice Activity Detection.
+        const speechDetected = avg > 15;
 
         if (speechDetected) { // Speech detected threshold
           // Interrupt LLM/TTS
