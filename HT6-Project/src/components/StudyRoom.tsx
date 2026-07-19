@@ -239,7 +239,7 @@ export const BunnyModel: React.FC<BunnyProps> = ({ emotion, triggerProjector, is
       if (jt < 0.3) {
         // jumping up
         const progress = jt / 0.3;
-        if (modelRef.current) modelRef.current.position.y = THREE.MathUtils.lerp(0, 20, progress);
+        if (modelRef.current) modelRef.current.position.y = THREE.MathUtils.lerp(0, 35, progress);
         if (armLBone.current) {
           armLBone.current.position.set(
             THREE.MathUtils.lerp(idleArmPosX, grabArmPosX, progress),
@@ -267,7 +267,7 @@ export const BunnyModel: React.FC<BunnyProps> = ({ emotion, triggerProjector, is
       } else if (jt < 0.6) {
         // falling down
         const progress = (jt - 0.3) / 0.3;
-        if (modelRef.current) modelRef.current.position.y = THREE.MathUtils.lerp(20, 0, progress);
+        if (modelRef.current) modelRef.current.position.y = THREE.MathUtils.lerp(35, 0, progress);
         if (armLBone.current) {
           armLBone.current.position.set(
             THREE.MathUtils.lerp(grabArmPosX, idleArmPosX, progress),
@@ -1081,12 +1081,13 @@ export const StudyRoom: React.FC = () => {
       duration: `${sessionTimeMins} min`,
       distracted: `${distractedSecs} sec`,
       struggling: `${strugglingSecs} sec`,
+      documentId: documentId,
     };
 
     const existing = JSON.parse(localStorage.getItem('studySessions') || '[]');
     localStorage.setItem('studySessions', JSON.stringify([...existing, newSession]));
 
-    navigate('/finished');
+    navigate(`/finished?documentId=${documentId}`);
   };
 
   return (
@@ -1202,7 +1203,7 @@ export const StudyRoom: React.FC = () => {
                 }}
                 style={{ padding: '4px 12px', fontSize: '0.9rem', backgroundColor: ttsActive ? 'var(--c-peach)' : 'var(--c-coral)', height: 'auto', minHeight: '30px' }}
               >
-                {ttsActive ? '🔊 TTS On' : '🔇 TTS Off'}
+                {ttsActive ? 'TTS On' : 'TTS Off'}
               </button>
             </div>
 

@@ -104,19 +104,20 @@ body {
   font-family: var(--font-retro);
   font-size: 3rem;
   letter-spacing: 1px;
-  color: var(--c-red-brown);
-  text-shadow: 2px 2px 0px var(--c-peach);
+  color: white;
+  text-shadow: 2px 2px 0px #6f342d;
 }
 
 .auth-scene {
   height: 100vh;
   position: relative;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
   overflow: hidden;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  background: url('/hero.jpg') center/cover no-repeat;
 }
 
 /* .auth-scene::before {
@@ -183,17 +184,9 @@ body {
   background: linear-gradient(180deg, #274640 0, #355953 100%);
 } */
 
-.auth-card {
-  position: relative;
+.auth-logo {
   z-index: 1;
-  width: 1000px;
-  height: 500px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  padding: 1.5rem 2rem;   /* reduced from 3.2rem 2rem 2rem */
-  margin-top: 0;          /* removed the extra 3rem push */
+  max-width: 90vw;
 }
 
 .auth-title {
@@ -236,22 +229,29 @@ body {
 }
 
 .auth-button {
-  align-self: center;
-  margin-top: 1.8rem;
-  width: 320px;
-  height: 4rem;
-  border: 0.35rem solid #76515f;
-  border-radius: 0.75rem;
-  background: linear-gradient(180deg, #bb7282 0%, #a96276 100%);
-  box-shadow: 0.35rem 0.35rem 0 #5d4350;
-  color: #222;
+  margin: 0 auto;
+  width: 480px;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: white;
   font-family: var(--font-retro);
   font-size: 2.8rem;
   line-height: 1;
   cursor: pointer;
-  margin-top: 100px;
+  display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.auth-button-img {
+  width: 100%;
+  height: auto;
+  border: none;
+  box-shadow: none;
+  background: none;
 }
 
 .auth-button:hover {

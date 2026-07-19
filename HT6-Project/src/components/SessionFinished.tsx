@@ -1,12 +1,16 @@
 import React, { Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Canvas } from '@react-three/fiber';
 import { Center } from '@react-three/drei';
 import { BunnyModel } from './StudyRoom';
 
 export const SessionFinished: React.FC = () => {
   const navigate = useNavigate();
-  const history = JSON.parse(localStorage.getItem('studySessions') || '[]');
+  const [searchParams] = useSearchParams();
+  const documentId = searchParams.get('documentId');
+
+  const allHistory = JSON.parse(localStorage.getItem('studySessions') || '[]');
+  const history = documentId ? allHistory.filter((s: any) => s.documentId === documentId) : allHistory;
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 500px', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-primary)' }}>
