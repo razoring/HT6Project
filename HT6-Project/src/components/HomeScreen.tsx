@@ -3,10 +3,65 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import type { Document, Quest } from '../services/api';
-import folderIcon from '../assets/folder_icon_8x.svg'; 
-import folderIconPNG from '../assets/folder_icon_8x.png'; 
+import folderIcon from '../assets/folder_icon_8x.svg';
+import folderIconPNG from '../assets/folder_icon_8x.png';
 
 const MOCK_USER_ID = 'mock_user_123';
+
+const WalkingSprite: React.FC = () => {
+  const spriteScale = 0.5;
+  const [position, setPosition] = useState(0);
+  const [direction, setDirection] = useState(1);
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    let animationFrameId: number;
+    let lastTime = performance.now();
+
+    const animate = (time: number) => {
+      const delta = time - lastTime;
+      if (delta > 100) { // ~10fps
+        setFrame(prev => (prev + 1) % 6);
+        setPosition(prev => {
+          let next = prev + direction * 12;
+          if (next > 300) {
+            setDirection(-1);
+            return 300;
+          }
+          if (next < -300) {
+            setDirection(1);
+            return -300;
+          }
+          return next;
+        });
+        lastTime = time;
+      }
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    animationFrameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [direction]);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: '-288px',
+        left: '50%',
+        transformOrigin: 'bottom center',
+        transform: `translateX(calc(-50% + ${position}px)) scaleX(${direction === 1 ? spriteScale : -spriteScale}) scaleY(${spriteScale})`,
+        width: '150px',
+        height: '288px',
+        backgroundImage: 'url(/sprites.png)',
+        backgroundPosition: `-${frame * 150}px 0px`,
+        backgroundRepeat: 'no-repeat',
+        zIndex: 10,
+        pointerEvents: 'none'
+      }}
+    />
+  );
+};
 
 export const HomeScreen: React.FC = () => {
   const [sessions, setSessions] = useState<Document[]>([]);
@@ -90,27 +145,34 @@ export const HomeScreen: React.FC = () => {
   };
 
   return (
-    <div style={{ maxWidth: '1240px', margin: '40px auto', padding: '0 20px' }}>
-      <header style={{ textAlign: 'center', marginBottom: '40px', position: 'relative' }}>
+    <div style={{
+      backgroundImage: 'url(/background.jpg)',
+      backgroundSize: 'cover',
+      backgroundAttachment: 'fixed',
+      backgroundPosition: 'center',
+      minHeight: '100vh',
+      width: '100vw',
+      overflowX: 'hidden'
+    }}>
+      <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '40px 20px', position: 'relative' }}>
+        <header style={{ textAlign: 'center', marginBottom: '40px', position: 'relative' }}>
         <div style={{ position: 'absolute', top: '10px', right: '10px' }}>
-          <button 
-            className="pixel-button" 
+          <button
+            className="pixel-button"
             onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
             style={{ padding: '8px 16px', fontSize: '0.9rem' }}
           >
             Logout
           </button>
         </div>
-        <h1 className="pixel-title">Cozy Study Room</h1>
-        <p style={{ fontSize: '1.2rem', color: 'var(--c-sand-dark)', fontWeight: 600 }}>
-          Your Animal Crossing-inspired virtual learning space
-        </p>
+        <h1 className="pixel-title">StudyBunny</h1>
       </header>
 
-      <div style={{ width: '100%' }}>
+      <div style={{ width: '100%', position: 'relative' }}>
         {/* Upload Zone */}
-        <div className="pixel-panel" style={{ display: 'flex', flexDirection: 'column', marginBottom: '30px' }}>
-          <h2 style={{ fontFamily: 'var(--font-retro)', fontSize: '2.2rem', marginBottom: '15px', color: 'var(--c-red-brown)' }}>
+        <div className="pixel-panel" style={{ display: 'flex', flexDirection: 'column', marginBottom: '30px', position: 'relative' }}>
+          <WalkingSprite />
+          <h2 style={{ fontFamily: 'var(--font-retro)', fontSize: '2.2rem', marginBottom: '15px', color: 'var(--c-red-brown)', zIndex: 11, position: 'relative' }}>
             Start New Session
           </h2>
           <p style={{ marginBottom: '20px', color: 'var(--c-sand-dark)' }}>
@@ -248,6 +310,7 @@ export const HomeScreen: React.FC = () => {
             })()
           )}
         </div>
+      </div>
       </div>
     </div>
   );
