@@ -1,11 +1,16 @@
 import React, { useEffect, useRef, useState, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { useGLTF, Center } from '@react-three/drei';
+import { useGLTF, Center, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { SkeletonUtils } from 'three-stdlib';
 import { api } from '../services/api';
 import type { ChatMessage, FocusEvent } from '../services/api';
+
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 // working
 import QuestProgress from '../components/QuestBar';
@@ -16,9 +21,11 @@ import micIcon from '../assets/mic.png';
 // --- 3D Avatar Subcomponent ---
 interface BunnyProps {
   emotion: 'neutral' | 'angry' | 'sad';
+  triggerProjector?: boolean;
+  isThinking?: boolean;
 }
 
-const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
+const BunnyModel: React.FC<BunnyProps> = ({ emotion, triggerProjector, isThinking }) => {
   const { scene } = useGLTF('/bunny.glb?v=8');
   const clonedScene = React.useMemo(() => SkeletonUtils.clone(scene), [scene]);
   const modelRef = useRef<THREE.Group>(null);
@@ -34,12 +41,21 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
   const armRBone = useRef<THREE.Bone | null>(null);
   const torsoBone = useRef<THREE.Bone | null>(null);
   const meshRefs = useRef<THREE.SkinnedMesh[]>([]);
+  const jumpState = useRef<'idle' | 'jumping'>('idle');
+  const jumpStartTime = useRef(0);
+
+  useEffect(() => {
+    if (triggerProjector) {
+      jumpState.current = 'jumping';
+      jumpStartTime.current = 0;
+    }
+  }, [triggerProjector]);
 
   useEffect(() => {
     meshRefs.current = [];
     clonedScene.traverse((obj) => {
       const lowerName = (obj.name || '').toLowerCase();
-      
+
       if (lowerName.includes('ear') && (lowerName.includes('l') || lowerName.includes('_l'))) earLBone.current = obj as THREE.Bone;
       if (lowerName.includes('ear') && (lowerName.includes('r') || lowerName.includes('_r'))) earRBone.current = obj as THREE.Bone;
       if (lowerName.includes('eye') && (lowerName.includes('l') || lowerName.includes('_l')) && !lowerName.includes('brow')) eyeLBone.current = obj as THREE.Bone;
@@ -50,7 +66,7 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
       if (lowerName.includes('arm') && (lowerName.includes('l') || lowerName.includes('_l'))) armLBone.current = obj as THREE.Bone;
       if (lowerName.includes('arm') && (lowerName.includes('r') || lowerName.includes('_r'))) armRBone.current = obj as THREE.Bone;
       if (lowerName.includes('torso')) torsoBone.current = obj as THREE.Bone;
-      
+
       if ((obj as any).isMesh || (obj as any).isSkinnedMesh) {
         if ((obj as any).morphTargetInfluences) {
           meshRefs.current.push(obj as THREE.SkinnedMesh);
@@ -77,16 +93,22 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
     meshRefs.current.forEach((mesh) => {
       const blinkIdx = mesh.morphTargetDictionary?.['Blink'];
       if (blinkIdx !== undefined) {
+        const restingBlink = isThinking ? 0.3 : (emotion === 'neutral' ? -0.8 : 0);
+
         if (isBlinking.current) {
           if (blinkTimer.current < blinkDuration.current) {
             mesh.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(mesh.morphTargetInfluences[blinkIdx], 1.5, delta * 30);
           } else if (blinkTimer.current < blinkDuration.current * 2) {
-            mesh.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(mesh.morphTargetInfluences[blinkIdx], 0, delta * 30);
+            mesh.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(mesh.morphTargetInfluences[blinkIdx], restingBlink, delta * 30);
           } else {
-            mesh.morphTargetInfluences[blinkIdx] = 0;
+            mesh.morphTargetInfluences[blinkIdx] = restingBlink;
           }
         } else {
-          mesh.morphTargetInfluences[blinkIdx] = 0;
+          mesh.morphTargetInfluences[blinkIdx] = THREE.MathUtils.lerp(
+            mesh.morphTargetInfluences[blinkIdx],
+            restingBlink,
+            delta * 10
+          );
         }
       }
     });
@@ -111,22 +133,22 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
       const bones = [];
       if (earTwitchSide.current === 'L' || earTwitchSide.current === 'BOTH') bones.push(earLBone.current);
       if (earTwitchSide.current === 'R' || earTwitchSide.current === 'BOTH') bones.push(earRBone.current);
-      
+
       if (earTwitchTimer.current < 0.3) {
         // Soft, single twitch pulse
         const rotation = Math.sin(earTwitchTimer.current * 10) * 0.1;
-        bones.forEach(bone => { 
+        bones.forEach(bone => {
           if (bone) {
             bone.rotation.x = 0;
             bone.rotation.z = rotation;
-          } 
+          }
         });
       } else {
-        bones.forEach(bone => { 
+        bones.forEach(bone => {
           if (bone) {
             bone.rotation.x = 0;
             bone.rotation.z = 0;
-          } 
+          }
         });
         isEarTwitching.current = false;
         earTwitchTimer.current = 0;
@@ -137,21 +159,112 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
     const t = state.clock.getElapsedTime();
     const lookX = Math.sin(t * 0.5) * 0.05;
     const lookY = Math.cos(t * 0.3) * 0.05;
-    
+
     if (eyeLBone.current && eyeRBone.current) {
-      eyeLBone.current.rotation.x = lookX;
+      eyeLBone.current.rotation.x = -(Math.PI / 2) + lookX;
       eyeLBone.current.rotation.y = lookY;
-      eyeRBone.current.rotation.x = lookX;
+      eyeRBone.current.rotation.x = -(Math.PI / 2) + lookX;
       eyeRBone.current.rotation.y = lookY;
     }
-    
+
     if (headBone.current) {
-      headBone.current.rotation.y = Math.sin(t * 0.4) * 0.03;
-      headBone.current.rotation.z = Math.cos(t * 0.6) * 0.02;
+      if (isThinking) {
+        headBone.current.rotation.y = THREE.MathUtils.lerp(headBone.current.rotation.y, 0.2 + Math.sin(t * 0.4) * 0.03, delta * 5);
+        headBone.current.rotation.z = THREE.MathUtils.lerp(headBone.current.rotation.z, Math.PI / 8 + Math.cos(t * 0.6) * 0.02, delta * 5);
+      } else {
+        headBone.current.rotation.y = THREE.MathUtils.lerp(headBone.current.rotation.y, Math.sin(t * 0.4) * 0.03, delta * 5);
+        headBone.current.rotation.z = THREE.MathUtils.lerp(headBone.current.rotation.z, Math.cos(t * 0.6) * 0.02, delta * 5);
+      }
     }
 
-    // Body idle movement
-    if (torsoBone.current) torsoBone.current.scale.y = 1 + Math.sin(t * 2) * 0.02;
+    const idleArmPosX = 1.2;
+    const idleArmPosY = 2;
+    const idleArmRotX = Math.PI * 1; // Straight down at sides
+    const idleArmRotYL = -Math.PI * 0.5;
+    const idleArmRotYR = Math.PI * 0.5;
+
+    const grabArmPosX = 0.6;
+    const grabArmPosY = 2.0;
+    const grabArmRotX = Math.PI * 0.4; // T-rex grab pose
+    const grabArmRotYL = Math.PI * 0.2;
+    const grabArmRotYR = -Math.PI * 0.2;
+
+    // Body idle movement & Jump animation
+    if (jumpState.current === 'idle') {
+      if (torsoBone.current) torsoBone.current.scale.y = 1 + Math.sin(t * 2) * 0.02;
+      if (modelRef.current) modelRef.current.position.y = 0;
+      if (armLBone.current) {
+        armLBone.current.position.set(idleArmPosX, idleArmPosY, 0);
+        armLBone.current.rotation.set(idleArmRotX, idleArmRotYL, 0);
+      }
+      if (armRBone.current) {
+        armRBone.current.position.set(-idleArmPosX, idleArmPosY, 0);
+        armRBone.current.rotation.set(idleArmRotX, idleArmRotYR, 0);
+      }
+    } else if (jumpState.current === 'jumping') {
+      if (jumpStartTime.current === 0) jumpStartTime.current = t;
+      const jt = t - jumpStartTime.current;
+
+      if (jt < 0.3) {
+        // jumping up
+        const progress = jt / 0.3;
+        if (modelRef.current) modelRef.current.position.y = THREE.MathUtils.lerp(0, 20, progress);
+        if (armLBone.current) {
+          armLBone.current.position.set(
+            THREE.MathUtils.lerp(idleArmPosX, grabArmPosX, progress),
+            THREE.MathUtils.lerp(idleArmPosY, grabArmPosY, progress),
+            0
+          );
+          armLBone.current.rotation.set(
+            THREE.MathUtils.lerp(idleArmRotX, grabArmRotX, progress),
+            THREE.MathUtils.lerp(idleArmRotYL, grabArmRotYL, progress),
+            0
+          );
+        }
+        if (armRBone.current) {
+          armRBone.current.position.set(
+            THREE.MathUtils.lerp(-idleArmPosX, -grabArmPosX, progress),
+            THREE.MathUtils.lerp(idleArmPosY, grabArmPosY, progress),
+            0
+          );
+          armRBone.current.rotation.set(
+            THREE.MathUtils.lerp(idleArmRotX, grabArmRotX, progress),
+            THREE.MathUtils.lerp(idleArmRotYR, grabArmRotYR, progress),
+            0
+          );
+        }
+      } else if (jt < 0.6) {
+        // falling down
+        const progress = (jt - 0.3) / 0.3;
+        if (modelRef.current) modelRef.current.position.y = THREE.MathUtils.lerp(20, 0, progress);
+        if (armLBone.current) {
+          armLBone.current.position.set(
+            THREE.MathUtils.lerp(grabArmPosX, idleArmPosX, progress),
+            THREE.MathUtils.lerp(grabArmPosY, idleArmPosY, progress),
+            0
+          );
+          armLBone.current.rotation.set(
+            THREE.MathUtils.lerp(grabArmRotX, idleArmRotX, progress),
+            THREE.MathUtils.lerp(grabArmRotYL, idleArmRotYL, progress),
+            0
+          );
+        }
+        if (armRBone.current) {
+          armRBone.current.position.set(
+            THREE.MathUtils.lerp(-grabArmPosX, -idleArmPosX, progress),
+            THREE.MathUtils.lerp(grabArmPosY, idleArmPosY, progress),
+            0
+          );
+          armRBone.current.rotation.set(
+            THREE.MathUtils.lerp(grabArmRotX, idleArmRotX, progress),
+            THREE.MathUtils.lerp(grabArmRotYR, idleArmRotYR, progress),
+            0
+          );
+        }
+      } else {
+        jumpState.current = 'idle';
+      }
+    }
 
     // Emotion Shapekeys
     meshRefs.current.forEach((mesh) => {
@@ -218,6 +331,123 @@ const AvatarLoader = () => (
   </mesh>
 );
 
+// --- Streaming Speech Bubble Component ---
+interface StreamingBubbleProps {
+  text?: string;
+  isProjector?: boolean;
+  forceShow?: boolean;
+  onDismiss?: () => void;
+  children?: React.ReactNode;
+}
+
+const StreamingBubble: React.FC<StreamingBubbleProps> = ({ text, isProjector, forceShow, onDismiss, children }) => {
+  const [displayed, setDisplayed] = useState('');
+  const [dismissedText, setDismissedText] = useState<string | null>(null);
+  const [showProjector, setShowProjector] = useState(false);
+
+  useEffect(() => {
+    if ((text || forceShow) && isProjector) {
+      const timer = setTimeout(() => setShowProjector(true), 300); // 0.3s wait for jump to peak
+      return () => clearTimeout(timer);
+    } else {
+      setShowProjector(false);
+    }
+  }, [text, isProjector, forceShow]);
+
+  useEffect(() => {
+    if (!text) {
+      setDisplayed('');
+      return;
+    }
+    let i = 0;
+    setDisplayed('');
+    const interval = setInterval(() => {
+      setDisplayed(text.substring(0, i));
+      i++;
+      if (i > text.length) clearInterval(interval);
+    }, 15);
+    return () => clearInterval(interval);
+  }, [text]);
+
+  const isDismissed = text ? text === dismissedText : !forceShow;
+  if (!forceShow && (!text || isDismissed)) return null;
+  if (isProjector && !showProjector) return null; // Waiting for jump
+
+  const containerStyle: React.CSSProperties = isProjector ? {
+    position: 'absolute',
+    top: '0',
+    left: '10px',
+    right: '10px',
+    bottom: '20px', // Pulls down adequately covering the screen
+    backgroundColor: '#e6e6e6',
+    border: '4px solid #333',
+    borderTop: '20px solid #555', // Projector roller
+    borderBottom: '10px solid #555', // Bottom weight
+    padding: '30px',
+    color: 'black',
+    fontFamily: 'var(--font-retro)',
+    fontSize: '1.2rem',
+    lineHeight: '1.5',
+    overflowY: 'auto',
+    boxShadow: '0px 10px 30px rgba(0,0,0,0.5)',
+    zIndex: 10,
+    cursor: 'pointer',
+    animation: 'projectorPullDown 0.4s ease-out forwards',
+  } : {
+    position: 'absolute',
+    bottom: '20px',
+    left: '20px',
+    right: '20px',
+    maxHeight: '40%',
+    backgroundColor: 'white',
+    border: '4px solid black',
+    padding: '16px 20px',
+    color: 'black',
+    fontFamily: 'var(--font-retro)',
+    fontSize: '1.2rem',
+    lineHeight: '1.5',
+    overflowY: 'auto',
+    boxShadow: '4px 4px 0px rgba(0,0,0,0.2)',
+    zIndex: 10,
+    cursor: 'pointer',
+  };
+
+  return (
+    <>
+      {isProjector && (
+        <style>{`
+          @keyframes projectorPullDown {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(0); }
+          }
+        `}</style>
+      )}
+      <div
+        onClick={() => {
+          if (text) setDismissedText(text);
+          if (onDismiss) onDismiss();
+          if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+          }
+        }}
+        style={containerStyle}
+      >
+        <div style={{ position: 'absolute', top: isProjector ? '24px' : '8px', right: '12px', fontSize: '0.75rem', color: isProjector ? '#555' : '#999', fontWeight: 'bold' }}>
+          Click to dismiss
+        </div>
+        {text && (
+          <div className="markdown-content" style={{ margin: 0, marginTop: isProjector ? '20px' : '8px' }}>
+            <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+              {displayed}
+            </ReactMarkdown>
+          </div>
+        )}
+        {children}
+      </div>
+    </>
+  );
+};
+
 // --- Main Study Room Component ---
 export const StudyRoom: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
@@ -228,9 +458,11 @@ export const StudyRoom: React.FC = () => {
 
   // Webcam stream & controls
   const videoRef = useRef<HTMLVideoElement>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [cameraActive, setCameraActive] = useState(true);
   const [micActive, setMicActive] = useState(true);
+  const [ttsActive, setTtsActive] = useState(true);
 
   // Presage SDK tracking metrics
   const [focusMetrics, setFocusMetrics] = useState<FocusEvent>({
@@ -246,6 +478,64 @@ export const StudyRoom: React.FC = () => {
 
   // Avatar states
   const [avatarEmotion, setAvatarEmotion] = useState<'neutral' | 'angry' | 'sad'>('neutral');
+  const [showDebug, setShowDebug] = useState(false);
+
+  const [sessionStartIndex, setSessionStartIndex] = useState<number | null>(null);
+
+  // Service Health States
+  const [serviceHealth, setServiceHealth] = useState({
+    mongodb: 'OK',
+    gemini: 'OK',
+    eleven_labs: 'OK',
+    auth0: 'OK',
+    presage: 'OK'
+  });
+
+  const [maxProjectorChars, setMaxProjectorChars] = useState(200);
+
+  // Hidden testing logic to find character limit that reaches middle height
+  useEffect(() => {
+    const determineMaxChars = () => {
+      const container = document.getElementById('avatar-container');
+      if (!container) return;
+
+      const div = document.createElement('div');
+      div.style.position = 'absolute';
+      div.style.visibility = 'hidden';
+      div.style.bottom = '20px';
+      div.style.left = '20px';
+      div.style.right = '20px';
+      div.style.padding = '16px 20px';
+      div.style.fontFamily = 'var(--font-retro)';
+      div.style.fontSize = '1.2rem';
+      div.style.lineHeight = '1.5';
+      div.style.border = '4px solid black';
+      div.style.zIndex = '-100';
+
+      container.appendChild(div);
+
+      const targetHeight = container.clientHeight / 2;
+      let testText = '';
+      const sampleChunk = 'A '.repeat(5); // 10 chars per chunk
+
+      while (div.clientHeight < targetHeight && testText.length < 2000) {
+        testText += sampleChunk;
+        div.innerText = testText;
+      }
+
+      // Give a little buffer (subtracting a chunk)
+      setMaxProjectorChars(Math.max(50, testText.length - 10));
+      container.removeChild(div);
+    };
+
+    const timer = setTimeout(determineMaxChars, 500); // Give styles time to paint
+    window.addEventListener('resize', determineMaxChars);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', determineMaxChars);
+    };
+  }, []);
 
   // Load chat history & initialize webcam on component mount
   useEffect(() => {
@@ -253,7 +543,10 @@ export const StudyRoom: React.FC = () => {
 
     // Fetch previous chat history
     api.getChatHistory(documentId)
-      .then((history) => setMessages(history))
+      .then((history) => {
+        setMessages(history);
+        setSessionStartIndex(history.length);
+      })
       .catch((err) => console.error('Error fetching chat history:', err));
 
     // Request Webcam and Microphone permission
@@ -288,7 +581,15 @@ export const StudyRoom: React.FC = () => {
     canvasRef.current = canvas;
 
     const ws = new WebSocket('ws://localhost:8080');
-    ws.onopen = () => console.log('Connected to Presage Node.js Server');
+    ws.onopen = () => {
+      console.log('Connected to Presage Node.js Server');
+    };
+    ws.onclose = () => {
+      console.log('Disconnected from Presage Node.js Server');
+    };
+    ws.onerror = () => {
+      console.error('Presage WebSocket Error');
+    };
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
@@ -296,7 +597,7 @@ export const StudyRoom: React.FC = () => {
           const sdkData = message.data;
           let currentMood = 'neutral';
           let maxProb = 0;
-          
+
           if (sdkData.expressions) {
             for (const [expr, prob] of Object.entries(sdkData.expressions)) {
               if ((prob as number) > maxProb) {
@@ -350,26 +651,26 @@ export const StudyRoom: React.FC = () => {
         const video = videoRef.current;
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
-        
+
         if (ctx && video.readyState === video.HAVE_ENOUGH_DATA) {
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const base64Image = canvas.toDataURL('image/jpeg', 0.5); // Compress quality to 50%
-          
+
           wsRef.current.send(JSON.stringify({
             type: 'frame',
             image: base64Image
           }));
         }
       }
-      
+
       // Also send the latest focusMetrics state to the FastAPI backend
       setFocusMetrics(prevMetrics => {
-         if (prevMetrics) {
-           api.sendFocusEvent(prevMetrics).catch((err) => console.error('Error posting focus metrics:', err));
-         }
-         return prevMetrics;
+        if (prevMetrics) {
+          api.sendFocusEvent(prevMetrics).catch((err) => console.error('Error posting focus metrics:', err));
+        }
+        return prevMetrics;
       });
-      
+
     }, 5000);
 
     return () => clearInterval(interval);
@@ -428,16 +729,26 @@ export const StudyRoom: React.FC = () => {
       };
       setMessages((prev) => [...prev, avatarMsg]);
 
-      // Mock ElevenLabs speech output using browser speech synthesis
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(response.reply);
-        // Select a cozy/pleasant voice if available
-        const voices = window.speechSynthesis.getVoices();
-        const selectedVoice = voices.find((v) => v.name.includes('Google') || v.lang.startsWith('en'));
-        if (selectedVoice) utterance.voice = selectedVoice;
-        utterance.pitch = 1.1; // Make it sound a bit more cartoony
-        utterance.rate = 1.0;
-        window.speechSynthesis.speak(utterance);
+      // ElevenLabs speech output via backend proxy
+      if (ttsActive) {
+        try {
+          const ttsRes = await fetch('http://localhost:8000/chat/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: response.reply })
+          });
+          if (ttsRes.ok) {
+            const blob = await ttsRes.blob();
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            currentAudioRef.current = audio;
+            audio.play().catch(err => console.error("Audio playback blocked/failed:", err));
+          } else {
+            console.error("TTS fetch failed with status:", ttsRes.status);
+          }
+        } catch (err) {
+          console.error("TTS fetch failed", err);
+        }
       }
     } catch (err) {
       console.error('Chat query failed:', err);
@@ -448,7 +759,7 @@ export const StudyRoom: React.FC = () => {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', height: '100vh', backgroundColor: 'var(--bg-primary)' }}>
-      
+
       {/* 1. Quest Sidebar (Preserved placeholder for teammate) */}
       <div
         style={{
@@ -474,15 +785,15 @@ export const StudyRoom: React.FC = () => {
       </div>
 
       {/* 2. Main Area (Zoom layout grid) */}
-      <div style={{ display: 'grid', gridTemplateRows: '1fr 240px', overflow: 'hidden' }}>
-        
+      <div style={{ display: 'grid', gridTemplateRows: '1fr 50px', overflow: 'hidden' }}>
+
         {/* Top Grid: Camera Feeds */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '20px', overflow: 'hidden' }}>
-          
+
           {/* Webcam Feed Box */}
           <div className="pixel-panel" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
             <h3 style={{ fontFamily: 'var(--font-retro)', fontSize: '1.5rem', marginBottom: '8px', color: 'var(--c-red-brown)' }}>
-              Webcam (You)
+              You
             </h3>
             <div style={{ flex: 1, backgroundColor: 'black', borderRadius: '8px', overflow: 'hidden', position: 'relative', border: '2px solid var(--border-color)' }}>
               <video
@@ -526,22 +837,39 @@ export const StudyRoom: React.FC = () => {
             </button>
           </div>
 
-            {/* Tracking overlay */}
-            <div style={{ display: 'flex', justifyContent: 'space-around', backgroundColor: 'var(--c-sand-light)', border: '2px solid var(--border-color)', borderRadius: '6px', padding: '6px', marginTop: '10px', fontSize: '0.8rem', fontWeight: 800 }}>
-              <div>Focus: <span style={{ color: focusMetrics.focus > 70 ? 'var(--c-sage-dark)' : 'var(--c-burnt-orange)' }}>{focusMetrics.focus}%</span></div>
-              <div>Stress/Tiredness: <span>{focusMetrics.tiredness}%</span></div>
-              <div>Mood: <span style={{ textTransform: 'capitalize' }}>{focusMetrics.mood}</span></div>
-            </div>
+
           </div>
 
           {/* 3D Bunny Avatar Box */}
           <div className="pixel-panel" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <h3 style={{ fontFamily: 'var(--font-retro)', fontSize: '1.5rem', marginBottom: '8px', color: 'var(--c-red-brown)' }}>
-              Study Buddy (Tutor)
-            </h3>
-            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <h3 style={{ fontFamily: 'var(--font-retro)', fontSize: '1.5rem', color: 'var(--c-red-brown)', margin: 0 }}>
+                Easter
+              </h3>
+              <button
+                className="pixel-button"
+                onClick={() => {
+                  setTtsActive(prev => {
+                    const nextState = !prev;
+                    if (!nextState) {
+                      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+                      if (currentAudioRef.current) {
+                        currentAudioRef.current.pause();
+                        currentAudioRef.current.currentTime = 0;
+                      }
+                    }
+                    return nextState;
+                  });
+                }}
+                style={{ padding: '4px 12px', fontSize: '0.9rem', backgroundColor: ttsActive ? 'var(--c-peach)' : 'var(--c-coral)', height: 'auto', minHeight: '30px' }}
+              >
+                {ttsActive ? '🔊 TTS On' : '🔇 TTS Off'}
+              </button>
+            </div>
+
             {/* The Low-Res Retro Pixelated WebGL Container */}
             <div
+              id="avatar-container"
               style={{
                 flex: 1,
                 backgroundImage: 'url(/board.jpg)',
@@ -568,77 +896,134 @@ export const StudyRoom: React.FC = () => {
                   <directionalLight position={[-20, 30, 20]} intensity={3.5} color="#fff4d4" />
                   <directionalLight position={[20, -10, 10]} intensity={0.4} color="#8a9cba" />
                   <Suspense fallback={<AvatarLoader />}>
-                    <BunnyModel emotion={avatarEmotion} />
+                    <BunnyModel
+                      emotion={avatarEmotion}
+                      triggerProjector={showDebug || (sessionStartIndex !== null && messages.length > 0 && messages.length - 1 >= sessionStartIndex && messages[messages.length - 1].role === 'avatar' && messages[messages.length - 1].text.length > maxProjectorChars)}
+                      isThinking={sendingMsg}
+                    />
                   </Suspense>
                 </Canvas>
               </div>
 
-              {/* Expressive HUD */}
-              <div style={{ position: 'absolute', bottom: '10px', right: '10px', backgroundColor: 'var(--c-brown-dark)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 800 }}>
-                Status: {avatarEmotion === 'angry' ? 'Stern 💢' : avatarEmotion === 'sad' ? 'Concerned 😟' : 'Happy 😊'}
+              {showDebug ? (
+                <StreamingBubble
+                  forceShow={true}
+                  isProjector={true}
+                  onDismiss={() => setShowDebug(false)}
+                >
+                  <div style={{ marginTop: '20px', fontFamily: 'var(--font-retro)' }}>
+                    <h2 style={{ marginBottom: '15px', color: 'var(--c-red-brown)', fontSize: '1.5rem', textTransform: 'uppercase', borderBottom: '2px solid #ccc', paddingBottom: '5px' }}>System Diagnostics</h2>
+
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '2px' }}>
+                        <strong>Focus</strong>
+                        <span style={{ color: focusMetrics.focus > 70 ? 'var(--c-sage-dark)' : 'var(--c-burnt-orange)' }}>{focusMetrics.focus}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '10px', backgroundColor: '#ddd', borderRadius: '5px', overflow: 'hidden' }}>
+                        <div style={{ width: `${focusMetrics.focus}%`, height: '100%', backgroundColor: focusMetrics.focus > 70 ? 'var(--c-sage-dark)' : 'var(--c-burnt-orange)' }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '2px' }}>
+                        <strong>Distraction</strong>
+                        <span>{focusMetrics.distraction}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '10px', backgroundColor: '#ddd', borderRadius: '5px', overflow: 'hidden' }}>
+                        <div style={{ width: `${focusMetrics.distraction}%`, height: '100%', backgroundColor: 'var(--c-coral)' }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '2px' }}>
+                        <strong>Struggling</strong>
+                        <span>{focusMetrics.struggling}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '10px', backgroundColor: '#ddd', borderRadius: '5px', overflow: 'hidden' }}>
+                        <div style={{ width: `${focusMetrics.struggling}%`, height: '100%', backgroundColor: 'var(--c-red-brown)' }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '15px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '2px' }}>
+                        <strong>Tiredness</strong>
+                        <span>{focusMetrics.tiredness}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '10px', backgroundColor: '#ddd', borderRadius: '5px', overflow: 'hidden' }}>
+                        <div style={{ width: `${focusMetrics.tiredness}%`, height: '100%', backgroundColor: 'var(--c-burnt-orange)' }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: '2px dashed #ccc', paddingTop: '10px', marginBottom: '5px', fontSize: '1.1rem', display: 'flex', justifyContent: 'space-between' }}>
+                      <strong>Primary Mood:</strong>
+                      <span style={{ textTransform: 'capitalize', color: 'var(--c-brown-dark)' }}>{focusMetrics.mood} ({focusMetrics.mood_confidence}%)</span>
+                    </div>
+
+                    <div style={{ fontSize: '1.1rem', display: 'flex', justifyContent: 'space-between' }}>
+                      <strong>Tutor Status:</strong>
+                      <span>{avatarEmotion === 'angry' ? 'Stern 💢' : avatarEmotion === 'sad' ? 'Concerned 😟' : 'Happy 😊'}</span>
+                    </div>
+
+                    {/* Service Health Status */}
+                    <div style={{ marginTop: '15px', paddingTop: '10px', borderTop: '2px solid #ccc', fontSize: '0.9rem' }}>
+                      <strong style={{ display: 'block', marginBottom: '8px' }}>Service Status</strong>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '10px' }}>
+                          <span>MongoDB</span> <span style={{ color: serviceHealth.mongodb === 'OK' ? 'var(--c-sage-dark)' : 'var(--c-coral)', fontWeight: 'bold' }}>{serviceHealth.mongodb}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Gemini API</span> <span style={{ color: serviceHealth.gemini === 'OK' ? 'var(--c-sage-dark)' : 'var(--c-coral)', fontWeight: 'bold' }}>{serviceHealth.gemini}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '10px' }}>
+                          <span>Eleven Labs</span> <span style={{ color: serviceHealth.eleven_labs === 'OK' ? 'var(--c-sage-dark)' : 'var(--c-coral)', fontWeight: 'bold' }}>{serviceHealth.eleven_labs}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Auth0</span> <span style={{ color: serviceHealth.auth0 === 'OK' ? 'var(--c-sage-dark)' : 'var(--c-coral)', fontWeight: 'bold' }}>{serviceHealth.auth0}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '10px' }}>
+                          <span>Presage</span> <span style={{ color: serviceHealth.presage === 'OK' ? 'var(--c-sage-dark)' : 'var(--c-coral)', fontWeight: 'bold' }}>{serviceHealth.presage}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </StreamingBubble>
+              ) : sendingMsg ? (
+                <StreamingBubble
+                  text="Thinking..."
+                  isProjector={false}
+                />
+              ) : (
+                <StreamingBubble
+                  text={sessionStartIndex !== null && messages.length > 0 && messages.length - 1 >= sessionStartIndex && messages[messages.length - 1].role === 'avatar' ? messages[messages.length - 1].text : undefined}
+                  isProjector={sessionStartIndex !== null && messages.length > 0 && messages.length - 1 >= sessionStartIndex && messages[messages.length - 1].role === 'avatar' && messages[messages.length - 1].text.length > maxProjectorChars}
+                />
+              )}
+
+              {/* Debug Menu & Info Button */}
+              <div style={{ position: 'absolute', bottom: '10px', right: '10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                <button
+                  onClick={() => setShowDebug(!showDebug)}
+                  style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'var(--c-brown-dark)', color: 'white', border: '2px solid var(--c-sand-light)', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'var(--font-retro)' }}
+                  title="Debug Info"
+                >
+                  i
+                </button>
               </div>
             </div>
           </div>
 
         </div>
 
-        {/* Bottom Panel: Chat Log */}
+        {/* Bottom Panel: Text Input */}
         <div
           style={{
             borderTop: 'var(--border-thick)',
             backgroundColor: 'var(--bg-panel)',
-            display: 'grid',
-            gridTemplateRows: '1fr 50px',
             overflow: 'hidden',
           }}
         >
-          {/* Scrollable messages area */}
-          <div style={{ overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {messages.length === 0 ? (
-              <div style={{ color: 'var(--c-sand-med)', textAlign: 'center', marginTop: '20px' }}>
-                Ask your tutor anything about the uploaded document material!
-              </div>
-            ) : (
-              messages.map((m, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    display: 'flex',
-                    justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
-                  }}
-                >
-                  <div
-                    style={{
-                      maxWidth: '70%',
-                      padding: '10px 14px',
-                      borderRadius: '12px',
-                      border: '2px solid var(--border-color)',
-                      backgroundColor: m.role === 'user' ? 'var(--c-mint-bright)' : 'var(--c-peach)',
-                      color: 'var(--c-brown-dark)',
-                      fontWeight: 700,
-                      boxShadow: '2px 2px 0px var(--border-color)',
-                      fontSize: '0.95rem',
-                    }}
-                  >
-                    <div style={{ fontSize: '0.75rem', color: 'var(--c-sand-dark)', marginBottom: '3px' }}>
-                      {m.role === 'user' ? 'You' : 'Bunny Tutor'}
-                    </div>
-                    {m.text}
-                  </div>
-                </div>
-              ))
-            )}
-            {sendingMsg && (
-              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <div style={{ backgroundColor: 'var(--c-peach)', padding: '10px 14px', borderRadius: '12px', border: '2px solid var(--border-color)', fontWeight: 700 }}>
-                  Tutor is typing...
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Text Input Row */}
-          <form onSubmit={handleSendMessage} style={{ display: 'flex', borderTop: '2px solid var(--border-color)' }}>
+          <form onSubmit={handleSendMessage} style={{ display: 'flex', height: '100%' }}>
             <input
               type="text"
               value={chatInput}

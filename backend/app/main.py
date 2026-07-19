@@ -8,8 +8,8 @@ app = FastAPI(title="Gamified Study Room API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip().rstrip("/") for origin in settings.cors_origins.split(",")],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -22,4 +22,20 @@ app.include_router(focus.router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    from app.db.mongo import get_client
+    services = {
+        "mongodb": "FAIL",
+        "gemini": "OK",
+        "eleven_labs": "OK",
+        "auth0": "OK"
+    }
+    try:
+        await get_client().admin.command('ping')
+        services["mongodb"] = "OK"
+    except Exception as e:
+        print(f"Healthcheck DB Error: {e}")
+        
+    return {
+        "status": "ok",
+        "services": services
+    }
