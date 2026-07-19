@@ -466,6 +466,41 @@ export const StudyRoom: React.FC = () => {
 
   const [sessionStartIndex, setSessionStartIndex] = useState<number | null>(null);
 
+  // Service Health States
+  const [serviceHealth, setServiceHealth] = useState({
+    mongodb: 'OK',
+    gemini: 'OK',
+    eleven_labs: 'OK',
+    auth0: 'OK',
+    presage: 'OK'
+  });
+
+  // Poll backend health
+  useEffect(() => {
+    const fetchHealth = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/health');
+        if (response.ok) {
+          const data = await response.json();
+          setServiceHealth(prev => ({
+            ...prev,
+            mongodb: data.services.mongodb || 'FAIL',
+            gemini: data.services.gemini || 'FAIL',
+            eleven_labs: data.services.eleven_labs || 'FAIL',
+            auth0: data.services.auth0 || 'FAIL'
+          }));
+        } else {
+          setServiceHealth(prev => ({ ...prev, mongodb: 'FAIL', gemini: 'FAIL', eleven_labs: 'FAIL', auth0: 'FAIL' }));
+        }
+      } catch (err) {
+        setServiceHealth(prev => ({ ...prev, mongodb: 'FAIL', gemini: 'FAIL', eleven_labs: 'FAIL', auth0: 'FAIL' }));
+      }
+    };
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Load chat history & initialize webcam on component mount
   useEffect(() => {
     if (!documentId) return;
@@ -510,7 +545,17 @@ export const StudyRoom: React.FC = () => {
     canvasRef.current = canvas;
 
     const ws = new WebSocket('ws://localhost:8080');
-    ws.onopen = () => console.log('Connected to Presage Node.js Server');
+    ws.onopen = () => {
+      console.log('Connected to Presage Node.js Server');
+      setServiceHealth(prev => ({ ...prev, presage: 'OK' }));
+    };
+    ws.onclose = () => {
+      console.log('Disconnected from Presage Node.js Server');
+      setServiceHealth(prev => ({ ...prev, presage: 'FAIL' }));
+    };
+    ws.onerror = () => {
+      setServiceHealth(prev => ({ ...prev, presage: 'FAIL' }));
+    };
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
@@ -783,11 +828,79 @@ export const StudyRoom: React.FC = () => {
                   onDismiss={() => setShowDebug(false)}
                 >
                   <div style={{ marginTop: '20px', fontFamily: 'var(--font-retro)' }}>
-                    <h2 style={{ marginBottom: '15px', color: 'var(--c-red-brown)', fontSize: '1.5rem', textTransform: 'uppercase' }}>System Diagnostics</h2>
-                    <div style={{ marginBottom: '10px', fontSize: '1.2rem' }}><strong>Focus Level:</strong> <span style={{ color: focusMetrics.focus > 70 ? 'var(--c-sage-dark)' : 'var(--c-burnt-orange)' }}>{focusMetrics.focus}%</span></div>
-                    <div style={{ marginBottom: '10px', fontSize: '1.2rem' }}><strong>Stress/Tiredness:</strong> <span>{focusMetrics.tiredness}%</span></div>
-                    <div style={{ marginBottom: '10px', fontSize: '1.2rem' }}><strong>User Mood:</strong> <span style={{ textTransform: 'capitalize' }}>{focusMetrics.mood}</span></div>
-                    <div style={{ fontSize: '1.2rem' }}><strong>Tutor Status:</strong> {avatarEmotion === 'angry' ? 'Stern 💢' : avatarEmotion === 'sad' ? 'Concerned 😟' : 'Happy 😊'}</div>
+                    <h2 style={{ marginBottom: '15px', color: 'var(--c-red-brown)', fontSize: '1.5rem', textTransform: 'uppercase', borderBottom: '2px solid #ccc', paddingBottom: '5px' }}>System Diagnostics</h2>
+
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '2px' }}>
+                        <strong>Focus</strong>
+                        <span style={{ color: focusMetrics.focus > 70 ? 'var(--c-sage-dark)' : 'var(--c-burnt-orange)' }}>{focusMetrics.focus}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '10px', backgroundColor: '#ddd', borderRadius: '5px', overflow: 'hidden' }}>
+                        <div style={{ width: `${focusMetrics.focus}%`, height: '100%', backgroundColor: focusMetrics.focus > 70 ? 'var(--c-sage-dark)' : 'var(--c-burnt-orange)' }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '2px' }}>
+                        <strong>Distraction</strong>
+                        <span>{focusMetrics.distraction}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '10px', backgroundColor: '#ddd', borderRadius: '5px', overflow: 'hidden' }}>
+                        <div style={{ width: `${focusMetrics.distraction}%`, height: '100%', backgroundColor: 'var(--c-coral)' }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '2px' }}>
+                        <strong>Struggling</strong>
+                        <span>{focusMetrics.struggling}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '10px', backgroundColor: '#ddd', borderRadius: '5px', overflow: 'hidden' }}>
+                        <div style={{ width: `${focusMetrics.struggling}%`, height: '100%', backgroundColor: 'var(--c-red-brown)' }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '15px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '2px' }}>
+                        <strong>Tiredness</strong>
+                        <span>{focusMetrics.tiredness}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '10px', backgroundColor: '#ddd', borderRadius: '5px', overflow: 'hidden' }}>
+                        <div style={{ width: `${focusMetrics.tiredness}%`, height: '100%', backgroundColor: 'var(--c-burnt-orange)' }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: '2px dashed #ccc', paddingTop: '10px', marginBottom: '5px', fontSize: '1.1rem', display: 'flex', justifyContent: 'space-between' }}>
+                      <strong>Primary Mood:</strong>
+                      <span style={{ textTransform: 'capitalize', color: 'var(--c-brown-dark)' }}>{focusMetrics.mood} ({focusMetrics.mood_confidence}%)</span>
+                    </div>
+
+                    <div style={{ fontSize: '1.1rem', display: 'flex', justifyContent: 'space-between' }}>
+                      <strong>Tutor Status:</strong>
+                      <span>{avatarEmotion === 'angry' ? 'Stern 💢' : avatarEmotion === 'sad' ? 'Concerned 😟' : 'Happy 😊'}</span>
+                    </div>
+
+                    {/* Service Health Status */}
+                    <div style={{ marginTop: '15px', paddingTop: '10px', borderTop: '2px solid #ccc', fontSize: '0.9rem' }}>
+                      <strong style={{ display: 'block', marginBottom: '8px' }}>Service Status</strong>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '10px' }}>
+                          <span>MongoDB</span> <span style={{ color: serviceHealth.mongodb === 'OK' ? 'var(--c-sage-dark)' : 'var(--c-coral)', fontWeight: 'bold' }}>{serviceHealth.mongodb}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Gemini API</span> <span style={{ color: serviceHealth.gemini === 'OK' ? 'var(--c-sage-dark)' : 'var(--c-coral)', fontWeight: 'bold' }}>{serviceHealth.gemini}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '10px' }}>
+                          <span>Eleven Labs</span> <span style={{ color: serviceHealth.eleven_labs === 'OK' ? 'var(--c-sage-dark)' : 'var(--c-coral)', fontWeight: 'bold' }}>{serviceHealth.eleven_labs}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Auth0</span> <span style={{ color: serviceHealth.auth0 === 'OK' ? 'var(--c-sage-dark)' : 'var(--c-coral)', fontWeight: 'bold' }}>{serviceHealth.auth0}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '10px' }}>
+                          <span>Presage</span> <span style={{ color: serviceHealth.presage === 'OK' ? 'var(--c-sage-dark)' : 'var(--c-coral)', fontWeight: 'bold' }}>{serviceHealth.presage}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </StreamingBubble>
               ) : (

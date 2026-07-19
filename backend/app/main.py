@@ -22,4 +22,20 @@ app.include_router(focus.router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    from app.db.mongo import get_client
+    services = {
+        "mongodb": "FAIL",
+        "gemini": "OK",
+        "eleven_labs": "OK",
+        "auth0": "OK"
+    }
+    try:
+        await get_client().admin.command('ping')
+        services["mongodb"] = "OK"
+    except Exception as e:
+        print(f"Healthcheck DB Error: {e}")
+        
+    return {
+        "status": "ok",
+        "services": services
+    }
