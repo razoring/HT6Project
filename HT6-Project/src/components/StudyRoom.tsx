@@ -696,6 +696,32 @@ export const StudyRoom: React.FC = () => {
     }
   };
 
+  const playTTS = async (textToSpeak: string) => {
+    if (!ttsActive) return;
+    try {
+      const ttsRes = await fetch('http://localhost:8000/chat/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToSpeak })
+      });
+      if (ttsRes.ok) {
+        const blob = await ttsRes.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        if (currentAudioRef.current) {
+          currentAudioRef.current.pause();
+          currentAudioRef.current.currentTime = 0;
+        }
+        currentAudioRef.current = audio;
+        audio.play().catch(err => console.error("Audio playback blocked/failed:", err));
+      } else {
+        console.error("TTS fetch failed with status:", ttsRes.status);
+      }
+    } catch (err) {
+      console.error("TTS fetch failed", err);
+    }
+  };
+
   // Handle chat messaging
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -728,26 +754,7 @@ export const StudyRoom: React.FC = () => {
       setMessages((prev) => [...prev, avatarMsg]);
 
       // ElevenLabs speech output via backend proxy
-      if (ttsActive) {
-        try {
-          const ttsRes = await fetch('http://localhost:8000/chat/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: response.reply })
-          });
-          if (ttsRes.ok) {
-            const blob = await ttsRes.blob();
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            currentAudioRef.current = audio;
-            audio.play().catch(err => console.error("Audio playback blocked/failed:", err));
-          } else {
-            console.error("TTS fetch failed with status:", ttsRes.status);
-          }
-        } catch (err) {
-          console.error("TTS fetch failed", err);
-        }
-      }
+      playTTS(response.reply);
     } catch (err) {
       console.error('Chat query failed:', err);
     } finally {
@@ -983,7 +990,13 @@ export const StudyRoom: React.FC = () => {
               {/* Debug Menu & Info Button */}
               <div style={{ position: 'absolute', bottom: '10px', right: '10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                 <button
-                  onClick={() => setShowDebug(!showDebug)}
+                  onClick={() => {
+                    const nextState = !showDebug;
+                    setShowDebug(nextState);
+                    if (nextState) {
+                      playTTS("this is the debugger menu!");
+                    }
+                  }}
                   style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'var(--c-brown-dark)', color: 'white', border: '2px solid var(--c-sand-light)', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'var(--font-retro)' }}
                   title="Debug Info"
                 >
