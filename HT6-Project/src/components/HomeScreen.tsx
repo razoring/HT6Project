@@ -3,6 +3,8 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import type { Document, Quest } from '../services/api';
+import folderIcon from '../assets/folder_icon_8x.svg'; 
+import folderIconPNG from '../assets/folder_icon_8x.png'; 
 
 const MOCK_USER_ID = 'mock_user_123';
 
@@ -126,7 +128,12 @@ export const HomeScreen: React.FC = () => {
             }}
           >
             <input type="file" onChange={handleFileInput} style={{ display: 'none' }} accept=".pdf,.txt,.md" />
-            <div style={{ fontSize: '3rem', marginBottom: '10px' }}>📁</div>
+            {/* <div style={{ fontSize: '3rem', marginBottom: '10px' }}>📁</div> */}
+            <img
+              src={folderIconPNG}
+              alt="Upload folder"
+              style={{ width: '3rem', height: '3rem', marginBottom: '10px' }}
+            />
             {uploading ? (
               <span style={{ fontWeight: 800, color: 'var(--c-clay)' }}>Uploading document...</span>
             ) : (

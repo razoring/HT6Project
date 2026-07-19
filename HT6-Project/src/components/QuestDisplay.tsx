@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { api } from "../services/api";
 import type { Quest } from "../services/api";
 
+import continueIcon from '../assets/Error_Icon_8x.png';
+
 interface QuestDisplayProps {
   quest: Quest;
   onContinue?: (quest: Quest) => void;
@@ -63,7 +65,19 @@ export default function QuestDisplay({ quest, onContinue, onCompleted }: QuestDi
             color: isDone ? "var(--c-sage-dark)" : "var(--c-clay)",
           }}
         >
-          {isDone ? "✓" : isLocked ? "🔒" : "⚡"}
+          
+          {isDone ? (
+              "✓"
+            ) : isLocked ? (
+              "🔒"
+            ) : (
+              <img
+                src={continueIcon}
+                alt="In progress"
+                style={{ width: '20px', height: '20px', objectFit: 'contain' }}
+              />
+            )}
+
         </div>
 
         <div style={{ minWidth: 0, flex: 1 }}>

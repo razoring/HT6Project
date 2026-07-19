@@ -9,6 +9,8 @@ import type { ChatMessage, FocusEvent } from '../services/api';
 
 // working
 import QuestProgress from '../components/QuestBar';
+import cameraIcon from '../assets/cameraTransparent.png';
+import micIcon from '../assets/mic.png';
 
 
 // --- 3D Avatar Subcomponent ---
@@ -499,13 +501,30 @@ export const StudyRoom: React.FC = () => {
 
             {/* A/V Control Buttons inside feed */}
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <button className="pixel-button" onClick={toggleCamera} style={{ flex: 1, justifyContent: 'center' }}>
-                {cameraActive ? '📹 Stop Video' : '📹 Start Video'}
-              </button>
-              <button className="pixel-button" onClick={toggleMic} style={{ flex: 1, justifyContent: 'center', backgroundColor: micActive ? 'var(--c-peach)' : 'var(--c-coral)' }}>
-                {micActive ? '🎙️ Mute' : '🎙️ Unmute'}
-              </button>
-            </div>
+            <button
+              className="pixel-button"
+              onClick={toggleCamera}
+              style={{ flex: 1, justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <img src={cameraIcon} alt="" style={{ width: '16px', height: '16px' }} />
+              {cameraActive ? 'Stop Video' : 'Start Video'}
+            </button>
+            <button
+              className="pixel-button"
+              onClick={toggleMic}
+              style={{
+                flex: 1,
+                justifyContent: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: micActive ? 'var(--c-peach)' : 'var(--c-coral)',
+              }}
+            >
+              <img src={micIcon} alt="" style={{ width: '16px', height: '16px' }} />
+              {micActive ? 'Mute' : 'Unmute'}
+            </button>
+          </div>
 
             {/* Tracking overlay */}
             <div style={{ display: 'flex', justifyContent: 'space-around', backgroundColor: 'var(--c-sand-light)', border: '2px solid var(--border-color)', borderRadius: '6px', padding: '6px', marginTop: '10px', fontSize: '0.8rem', fontWeight: 800 }}>
