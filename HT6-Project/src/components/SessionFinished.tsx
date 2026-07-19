@@ -35,11 +35,9 @@ export const SessionFinished: React.FC = () => {
           <ambientLight intensity={1.5} />
           <pointLight position={[-10, 20, 20]} intensity={500} />
           <Suspense fallback={null}>
-            <Center position={[25, -10, 0]}>
-              <group scale={0.75}>
-                <BunnyModel emotion="neutral" isDancing={true} />
-              </group>
-            </Center>
+            <group position={[0, 5, 0]} scale={0.75}>
+              <BunnyModel emotion="neutral" isDancing={true} />
+            </group>
           </Suspense>
         </Canvas>
       </div>
