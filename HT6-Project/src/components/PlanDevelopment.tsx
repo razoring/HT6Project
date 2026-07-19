@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
+import hourglassImg from '../assets/hourglass.png';
 
 export const PlanDevelopment: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
@@ -59,8 +60,8 @@ export const PlanDevelopment: React.FC = () => {
         ) : (
           <div>
             {/* Spinning/pulsing retro element */}
-            <div style={{ display: 'inline-block', fontSize: '4rem', marginBottom: '20px', animation: 'spin 2s linear infinite' }}>
-              ⏳
+            <div style={{ display: 'inline-block', marginBottom: '20px', animation: 'spin 2s linear infinite' }}>
+              <img src={hourglassImg} alt="Loading..." style={{ width: '64px', height: '64px', imageRendering: 'pixelated' }} />
             </div>
             <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--c-brown-dark)', marginBottom: '10px' }}>
               Setting up your workspace... (Status: {status})
