@@ -4,6 +4,7 @@ type AuthPageProps = {
   title: string;
   logoSrc?: string;
   logoWidth?: number;
+  buttonSrc?: string;
   primaryActionLabel: string;
   primaryAction: () => void;
   alternateTo: string;
@@ -13,7 +14,8 @@ type AuthPageProps = {
 export function AuthPage({
   title,
   logoSrc,
-  logoWidth = 640,
+  logoWidth = 800,
+  buttonSrc,
   primaryActionLabel,
   primaryAction,
   alternateTo,
@@ -21,23 +23,24 @@ export function AuthPage({
 }: AuthPageProps) {
   return (
     <div className="auth-scene">
-      <main className="pixel-panel auth-card" aria-label={title}>
-        {logoSrc ? (
-          <img
-            src={logoSrc}
-            alt={title}
-            className="auth-logo"
-            style={{ width: `${logoWidth}px` }}
-          />
+      {logoSrc ? (
+        <img
+          src={logoSrc}
+          alt={title}
+          className="auth-logo"
+          style={{ width: `${logoWidth}px` }}
+        />
+      ) : (
+        <h1 className="pixel-title">{title}</h1>
+      )}
+
+      <button className="auth-button" onClick={primaryAction} type="button">
+        {buttonSrc ? (
+          <img src={buttonSrc} alt={primaryActionLabel} className="auth-button-img" />
         ) : (
-          <h1 className="pixel-title">{title}</h1>
+          primaryActionLabel
         )}
-
-        <button className="pixel-button auth-button" onClick={primaryAction} type="button">
-          {primaryActionLabel}
-        </button>
-
-      </main>
+      </button>
     </div>
   );
 }
