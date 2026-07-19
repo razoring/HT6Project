@@ -62,16 +62,9 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
   const isBlinking = useRef(false);
   const earTwitchTimer = useRef(0);
   const isEarTwitching = useRef(false);
-  const earTwitchSide = useRef<'L' | 'R'>('L');
+  const earTwitchSide = useRef<'L' | 'R' | 'BOTH'>('L');
 
   useFrame((state, delta) => {
-    // Blinking
-    blinkTimer.current += delta;
-    if (!isBlinking.current && blinkTimer.current > 3 + Math.random() * 4) {
-      isBlinking.current = true;
-      blinkTimer.current = 0;
-    }
-
     // Blinking
     blinkTimer.current += delta;
     if (!isBlinking.current && blinkTimer.current > 3 + Math.random() * 4) {
@@ -101,22 +94,37 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion }) => {
 
     // Ear Twitching
     earTwitchTimer.current += delta;
-    if (!isEarTwitching.current && earTwitchTimer.current > 5 + Math.random() * 5) {
+    if (!isEarTwitching.current && earTwitchTimer.current > 2 + Math.random() * 3) {
       isEarTwitching.current = true;
       earTwitchTimer.current = 0;
-      earTwitchSide.current = Math.random() > 0.5 ? 'L' : 'R';
+      const rand = Math.random();
+      if (rand < 0.33) earTwitchSide.current = 'L';
+      else if (rand < 0.66) earTwitchSide.current = 'R';
+      else earTwitchSide.current = 'BOTH';
     }
 
     if (isEarTwitching.current) {
-      const bone = earTwitchSide.current === 'L' ? earLBone.current : earRBone.current;
-      if (bone) {
-        if (earTwitchTimer.current < 0.2) {
-          bone.rotation.z = Math.sin(earTwitchTimer.current * 50) * 0.15;
-        } else {
-          bone.rotation.z = 0;
-          isEarTwitching.current = false;
-          earTwitchTimer.current = 0;
-        }
+      const bones = [];
+      if (earTwitchSide.current === 'L' || earTwitchSide.current === 'BOTH') bones.push(earLBone.current);
+      if (earTwitchSide.current === 'R' || earTwitchSide.current === 'BOTH') bones.push(earRBone.current);
+      
+      if (earTwitchTimer.current < 0.4) {
+        const rotation = Math.sin(earTwitchTimer.current * 50) * 0.3;
+        bones.forEach(bone => { 
+          if (bone) {
+            bone.rotation.x = rotation;
+            bone.rotation.z = rotation;
+          } 
+        });
+      } else {
+        bones.forEach(bone => { 
+          if (bone) {
+            bone.rotation.x = 0;
+            bone.rotation.z = 0;
+          } 
+        });
+        isEarTwitching.current = false;
+        earTwitchTimer.current = 0;
       }
     }
 
