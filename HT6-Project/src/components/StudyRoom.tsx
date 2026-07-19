@@ -487,9 +487,9 @@ export const StudyRoom: React.FC = () => {
   const hideBubbleTimerRef = useRef<any>(null);
   const recognitionRef = useRef<any>(null);
   
-  // Timers and cache for spontaneous interaction
-  const distractionTimerRef = useRef<number | null>(null);
-  const strugglingTimerRef = useRef<number | null>(null);
+  // Accumulator tracking for spontaneous interaction (frame counts)
+  const distractionScoreRef = useRef<number>(0);
+  const strugglingScoreRef = useRef<number>(0);
   const ttsCacheRef = useRef<Record<string, string>>({});
   
   const [isAvatarTalking, setIsAvatarTalking] = useState(false);
@@ -688,52 +688,46 @@ export const StudyRoom: React.FC = () => {
 
           if (updatedMetrics.struggling > 50) {
             setAvatarEmotion('sad');
-            if (!strugglingTimerRef.current) {
-              strugglingTimerRef.current = window.setTimeout(() => {
-                if (currentAudioRef.current?.paused ?? true) {
-                  const msgs = [
-                    "Do you need any help with this material?",
-                    "You look a bit confused. Want me to explain it differently?",
-                    "If this is too difficult, we can break it down into smaller steps."
-                  ];
-                  const msg = msgs[Math.floor(Math.random() * msgs.length)];
-                  const tempAvatarMsg: ChatMessage = { id: Math.random().toString(), quest_id: '', role: 'avatar', text: msg, created_at: new Date().toISOString() };
-                  setMessages(prev => [...prev, tempAvatarMsg]);
-                  playTTS(msg);
-                }
-                strugglingTimerRef.current = null;
-              }, 5000);
+            strugglingScoreRef.current += 1;
+            if (strugglingScoreRef.current >= 100) { // 10 seconds at 10fps
+              strugglingScoreRef.current = 0;
+              if (currentAudioRef.current?.paused ?? true) {
+                const msgs = [
+                  "Do you need any help with this material?",
+                  "You look a bit confused. Want me to explain it differently?",
+                  "If this is too difficult, we can break it down into smaller steps."
+                ];
+                const msg = msgs[Math.floor(Math.random() * msgs.length)];
+                const tempAvatarMsg: ChatMessage = { id: Math.random().toString(), quest_id: '', role: 'avatar', text: msg, created_at: new Date().toISOString() };
+                setMessages(prev => [...prev, tempAvatarMsg]);
+                api.injectChatMessage('', documentId || '', msg).catch(err => console.error('Failed to inject TTS message:', err));
+                playTTS(msg);
+              }
             }
           } else {
-            if (strugglingTimerRef.current) {
-              clearTimeout(strugglingTimerRef.current);
-              strugglingTimerRef.current = null;
-            }
+            strugglingScoreRef.current = Math.max(0, strugglingScoreRef.current - 1);
           }
 
           if (updatedMetrics.distraction > 50) {
             setAvatarEmotion('angry');
-            if (!distractionTimerRef.current) {
-              distractionTimerRef.current = window.setTimeout(() => {
-                if (currentAudioRef.current?.paused ?? true) {
-                  const msgs = [
-                    "Hey, are you still paying attention to the material?",
-                    "Let's try to focus on this section for a bit longer.",
-                    "Don't lose focus now, you're doing great!"
-                  ];
-                  const msg = msgs[Math.floor(Math.random() * msgs.length)];
-                  const tempAvatarMsg: ChatMessage = { id: Math.random().toString(), quest_id: '', role: 'avatar', text: msg, created_at: new Date().toISOString() };
-                  setMessages(prev => [...prev, tempAvatarMsg]);
-                  playTTS(msg);
-                }
-                distractionTimerRef.current = null;
-              }, 5000);
+            distractionScoreRef.current += 1;
+            if (distractionScoreRef.current >= 100) { // 10 seconds at 10fps
+              distractionScoreRef.current = 0;
+              if (currentAudioRef.current?.paused ?? true) {
+                const msgs = [
+                  "Hey, are you still paying attention to the material?",
+                  "Let's try to focus on this section for a bit longer.",
+                  "Don't lose focus now, you're doing great!"
+                ];
+                const msg = msgs[Math.floor(Math.random() * msgs.length)];
+                const tempAvatarMsg: ChatMessage = { id: Math.random().toString(), quest_id: '', role: 'avatar', text: msg, created_at: new Date().toISOString() };
+                setMessages(prev => [...prev, tempAvatarMsg]);
+                api.injectChatMessage('', documentId || '', msg).catch(err => console.error('Failed to inject TTS message:', err));
+                playTTS(msg);
+              }
             }
           } else {
-            if (distractionTimerRef.current) {
-              clearTimeout(distractionTimerRef.current);
-              distractionTimerRef.current = null;
-            }
+            distractionScoreRef.current = Math.max(0, distractionScoreRef.current - 1);
           }
 
           if (updatedMetrics.struggling <= 50 && updatedMetrics.distraction <= 50) {
@@ -786,8 +780,6 @@ export const StudyRoom: React.FC = () => {
     return () => {
         clearInterval(frameInterval);
         clearInterval(apiInterval);
-        if (distractionTimerRef.current) clearTimeout(distractionTimerRef.current);
-        if (strugglingTimerRef.current) clearTimeout(strugglingTimerRef.current);
     };
   }, [documentId, cameraActive]);
 

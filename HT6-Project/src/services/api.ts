@@ -106,6 +106,20 @@ export const api = {
     return res.json();
   },
 
+  async injectChatMessage(
+    questId: string,
+    documentId: string,
+    message: string
+  ): Promise<{ status: string }> {
+    const res = await fetch(`${API_BASE_URL}/chat/inject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quest_id: questId, document_id: documentId, message }),
+    });
+    if (!res.ok) throw new Error('Failed to inject chat message');
+    return res.json();
+  },
+
 
   //Working, hope it doesnt break the website 
   //fetching quest list 

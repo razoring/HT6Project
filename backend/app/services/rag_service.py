@@ -12,6 +12,9 @@ student's question using ONLY the context below. If the context doesn't contain 
 answer, say so honestly rather than guessing. Keep answers concise and encouraging,
 suitable for being read aloud via text-to-speech.
 
+Here is the recent conversation history for context:
+{history_text}
+
 CONTEXT:
 {context}
 
@@ -20,14 +23,14 @@ STUDENT QUESTION:
 """
 
 
-def answer_question(question: str, document_id: str, n_results: int = 5) -> dict:
+def answer_question(question: str, document_id: str, history_text: str = "", n_results: int = 5) -> dict:
     query_embedding = embed_text(question)
     chunks = query_chunks(query_embedding, document_id=document_id, n_results=n_results)
 
     context = "\n\n---\n\n".join(c["text"] for c in chunks)
 
     model = genai.GenerativeModel(GENERATION_MODEL)
-    prompt = ANSWER_PROMPT.format(context=context, question=question)
+    prompt = ANSWER_PROMPT.format(history_text=history_text, context=context, question=question)
     
     try:
         response = model.generate_content(prompt)
