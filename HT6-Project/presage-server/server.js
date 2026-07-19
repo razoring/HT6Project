@@ -1,24 +1,75 @@
 const WebSocket = require('ws');
-require('dotenv').config({ path: '../../backend/.env' }); // Load the shared .env if possible
+require('dotenv').config({ path: '../../backend/.env' });
 
-// TODO: Import the official SmartSpectra SDK here. 
-// For example: const PresageSDK = require('@presagetech/smartspectra-node');
-// Since it's proprietary, adjust the import to match their actual package name.
+const { SmartSpectraSDK, PixelFormat, faceMetrics, setMetricsClass, decodeMetrics } = require('@smartspectra/node-sdk');
+const { Metrics } = require('@smartspectra/node-sdk/messages');
 
 const PORT = 8080;
 const wss = new WebSocket.Server({ port: PORT });
-
 console.log(`Presage SmartSpectra WebSocket server started on ws://localhost:${PORT}`);
 
-// Initialize SDK (example based on standard SDK structures)
-let isSdkInitialized = false;
+setMetricsClass(Metrics);
+
+let sdk = null;
 try {
-    /* 
-    PresageSDK.init({ apiKey: process.env.VITE_PRESAGE || process.env.PRESAGE });
-    isSdkInitialized = true;
+    sdk = new SmartSpectraSDK({ 
+        apiKey: process.env.PRESAGE,
+        requestedMetrics: faceMetrics
+    });
+    sdk.useCustomInput();
+    
+    sdk.on('metrics', (buf) => {
+        try {
+            const data = decodeMetrics(buf);
+            let formatted = null;
+            if (data && data.face) {
+                // The SDK returns arrays of measurements (e.g. data.face.blinking, data.face.expression)
+                // We'll extract the latest value if available.
+                const lastExpr = data.face.expression?.length ? data.face.expression[data.face.expression.length - 1] : null;
+                const lastBlink = data.face.blinking?.length ? data.face.blinking[data.face.blinking.length - 1] : null;
+                const lastTalk = data.face.talking?.length ? data.face.talking[data.face.talking.length - 1] : null;
+
+                // Build expressions dictionary based on whatever the protobuf returns
+                let expressions = { neutral: 1.0 };
+                if (lastExpr && lastExpr.scores) {
+                    expressions = {
+                        neutral: 0, happiness: 0, sadness: 0, anger: 0,
+                        surprise: 0, fear: 0, disgust: 0
+                    };
+                    lastExpr.scores.forEach(score => {
+                        switch(score.type) {
+                            case 1: expressions.anger = score.confidence; break;
+                            case 3: expressions.disgust = score.confidence; break;
+                            case 4: expressions.fear = score.confidence; break;
+                            case 5: expressions.happiness = score.confidence; break;
+                            case 6: expressions.neutral = score.confidence; break;
+                            case 7: expressions.sadness = score.confidence; break;
+                            case 8: expressions.surprise = score.confidence; break;
+                        }
+                    });
+                }
+
+                formatted = {
+                    expressions: expressions,
+                    eyeBlink: lastBlink ? !!lastBlink.value : false,
+                    talking: lastTalk ? !!lastTalk.value : false
+                };
+            }
+            if (formatted) {
+                const payload = JSON.stringify({ type: 'detections', data: formatted });
+                wss.clients.forEach(client => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(payload);
+                    }
+                });
+            }
+        } catch (e) {
+            console.error("Error decoding metrics:", e);
+        }
+    });
+    
+    sdk.start();
     console.log("PresageSDK Initialized successfully.");
-    */
-    console.warn("WARNING: Presage SDK is not imported. Using a passthrough fallback.");
 } catch (e) {
     console.error("Failed to initialize Presage SDK:", e);
 }
@@ -26,44 +77,19 @@ try {
 wss.on('connection', (ws) => {
     console.log('React Client connected to Presage Server.');
 
-    ws.on('message', async (message) => {
-        try {
-            // The React app will send base64 image strings
-            const data = JSON.parse(message);
-            
-            if (data.type === 'frame') {
-                const base64Image = data.image; // "data:image/jpeg;base64,/9j/4AAQ..."
+    ws.on('message', async (message, isBinary) => {
+        if (isBinary && sdk) {
+            try {
+                // message is a Buffer containing RGBA data (640x480 * 4 = 1228800 bytes)
+                const width = 640;
+                const height = 480;
+                const stride = width * 4;
+                const timestampUs = Date.now() * 1000;
                 
-                let detections = null;
-
-                if (isSdkInitialized) {
-                    // Feed the frame into the SDK
-                    // e.g., detections = PresageSDK.processFrameBase64(base64Image);
-                } else {
-                    // Fallback Mock output so the web app doesn't crash during setup
-                    const state = Math.random();
-                    let expressions = { neutral: 1.0 };
-                    
-                    if (state > 0.9) expressions = { anger: 0.95 };
-                    else if (state > 0.8) expressions = { sadness: 0.9 };
-                    else if (state > 0.7) expressions = { surprise: 0.85 };
-                    else if (state > 0.6) expressions = { happiness: 0.8 };
-
-                    detections = {
-                        expressions: expressions,
-                        eyeBlink: Math.random() > 0.85,
-                        talking: Math.random() > 0.7,
-                    };
-                }
-
-                // Send the detections back to the React app
-                ws.send(JSON.stringify({
-                    type: 'detections',
-                    data: detections
-                }));
+                sdk.sendFrame(message, width, height, stride, PixelFormat.kRGBA, timestampUs);
+            } catch (error) {
+                console.error("Error sending frame to SDK:", error);
             }
-        } catch (error) {
-            console.error("Error processing frame:", error);
         }
     });
 
