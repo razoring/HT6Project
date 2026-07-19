@@ -30,7 +30,7 @@ export const SessionFinished: React.FC = () => {
         </div>
       </div>
 
-      <div style={{ backgroundColor: 'var(--c-sage-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 10, width: '100%', height: '100%' }}>
+      <div style={{ backgroundColor: 'var(--c-sage-dark)', backgroundImage: 'url(/celebration-bg.png)', backgroundSize: 'cover', backgroundPosition: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 10, width: '100%', height: '100%' }}>
         <Canvas camera={{ position: [0, 0, 150], fov: 45 }} style={{ width: '100%', height: '100%' }}>
           <ambientLight intensity={1.5} />
           <pointLight position={[-10, 20, 20]} intensity={500} />
