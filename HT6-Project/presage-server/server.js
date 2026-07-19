@@ -88,13 +88,9 @@ wss.on('connection', (ws) => {
                 const height = 480;
                 const stride = width * 4;
                 
-                const now = Date.now();
-                if (lastFrameTime === 0 || (now - lastFrameTime) > 1000) {
-                    syntheticTimestampUs += 33000; // Cap gap to ~30fps equivalent if delayed
-                } else {
-                    syntheticTimestampUs += (now - lastFrameTime) * 1000;
-                }
-                lastFrameTime = now;
+                // Force exactly 30fps synthetic timestamps to satisfy the SDK's 20fps minimum requirement,
+                // regardless of network jitter or browser throttling.
+                syntheticTimestampUs += 33333; 
                 
                 sdk.sendFrame(message, width, height, stride, PixelFormat.kRGBA, syntheticTimestampUs);
             } catch (error) {
