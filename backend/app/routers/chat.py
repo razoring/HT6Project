@@ -20,7 +20,14 @@ async def chat(req: ChatRequest):
         "created_at": datetime.now(timezone.utc),
     })
 
-    result = answer_question(req.message, document_id=req.document_id)
+    # Fetch recent history to provide conversational context
+    cursor = chat_messages_collection().find({"document_id": req.document_id}).sort("created_at", -1).limit(6)
+    recent_msgs = await cursor.to_list(length=6)
+    recent_msgs.reverse() # chronological order
+    
+    history_text = "\n".join([f"{m.get('role', 'unknown').capitalize()}: {m.get('text', '')}" for m in recent_msgs])
+
+    result = answer_question(req.message, document_id=req.document_id, history_text=history_text)
 
     # Log the avatar's reply
     await chat_messages_collection().insert_one({
@@ -44,6 +51,23 @@ async def get_chat_history(document_id: str):
         if isinstance(m.get("created_at"), datetime):
             m["created_at"] = m["created_at"].isoformat()
     return messages
+    
+class InjectRequest(BaseModel):
+    quest_id: str
+    document_id: str
+    message: str
+
+@router.post("/inject")
+async def inject_chat(req: InjectRequest):
+    await chat_messages_collection().insert_one({
+        "_id": uuid.uuid4().hex,
+        "quest_id": req.quest_id,
+        "document_id": req.document_id,
+        "role": "avatar",
+        "text": req.message,
+        "created_at": datetime.now(timezone.utc),
+    })
+    return {"status": "ok"}
 
 from pydantic import BaseModel
 from fastapi import Response

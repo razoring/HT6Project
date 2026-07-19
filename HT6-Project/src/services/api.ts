@@ -17,6 +17,7 @@ export interface FocusEvent {
   mood: string;
   mood_confidence: number;
   tiredness: number;
+  talking: boolean;
   timestamp?: string;
 }
 
@@ -103,6 +104,20 @@ export const api = {
   async getChatHistory(documentId: string): Promise<ChatMessage[]> {
     const res = await fetch(`${API_BASE_URL}/chat/history/${documentId}`);
     if (!res.ok) throw new Error('Failed to fetch chat history');
+    return res.json();
+  },
+
+  async injectChatMessage(
+    questId: string,
+    documentId: string,
+    message: string
+  ): Promise<{ status: string }> {
+    const res = await fetch(`${API_BASE_URL}/chat/inject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quest_id: questId, document_id: documentId, message }),
+    });
+    if (!res.ok) throw new Error('Failed to inject chat message');
     return res.json();
   },
 

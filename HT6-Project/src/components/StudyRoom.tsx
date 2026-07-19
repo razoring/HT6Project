@@ -476,6 +476,7 @@ export const StudyRoom: React.FC = () => {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [cameraActive, setCameraActive] = useState(true);
+  const cameraActiveRef = useRef(true);
   const [micActive, setMicActive] = useState(true);
   const [ttsActive, setTtsActive] = useState(true);
 
@@ -488,6 +489,13 @@ export const StudyRoom: React.FC = () => {
   const silenceTimerRef = useRef<any>(null);
   const hideBubbleTimerRef = useRef<any>(null);
   const recognitionRef = useRef<any>(null);
+  const isSdkTalkingRef = useRef<boolean>(false);
+  
+  // Accumulator tracking for spontaneous interaction (frame counts)
+  const distractionScoreRef = useRef<number>(0);
+  const strugglingScoreRef = useRef<number>(0);
+  const ttsCacheRef = useRef<Record<string, string>>({});
+  
   const [isAvatarTalking, setIsAvatarTalking] = useState(false);
 
   // Initialize Web Speech API for live visual feedback
@@ -518,6 +526,7 @@ export const StudyRoom: React.FC = () => {
     mood: 'neutral',
     mood_confidence: 90,
     tiredness: 5,
+    talking: false
   });
 
   // Avatar states
@@ -642,12 +651,45 @@ export const StudyRoom: React.FC = () => {
           let currentMood = 'neutral';
           let maxProb = 0;
 
+          if (!cameraActiveRef.current) {
+            // Default to neutral/focused if camera is off
+            setAvatarEmotion('neutral');
+            setFocusMetrics(prev => ({
+              ...prev,
+              focus: 90,
+              distraction: 10,
+              struggling: 0,
+              mood: 'neutral',
+              mood_confidence: 0,
+              tiredness: 5,
+              talking: false
+            }));
+            distractionScoreRef.current = 0;
+            strugglingScoreRef.current = 0;
+            return;
+          }
+
           if (sdkData.expressions) {
+            let maxNonNeutralProb = 0;
+            let maxNonNeutralMood = 'neutral';
+
             for (const [expr, prob] of Object.entries(sdkData.expressions)) {
+              if (expr !== 'neutral' && (prob as number) > maxNonNeutralProb) {
+                maxNonNeutralProb = prob as number;
+                maxNonNeutralMood = expr;
+              }
               if ((prob as number) > maxProb) {
                 maxProb = prob as number;
-                currentMood = expr;
               }
+            }
+
+            // 'Neutral' is mathematically dominant in most SDKs unless a face is heavily contorted.
+            // By overriding it if a non-neutral emotion crosses a 35% threshold, we make the
+            // avatar respond instantly to subtle micro-expressions.
+            if (maxNonNeutralProb > 35) {
+              currentMood = maxNonNeutralMood;
+            } else {
+              currentMood = 'neutral';
             }
           }
 
@@ -656,20 +698,65 @@ export const StudyRoom: React.FC = () => {
             user_id: 'mock_user_123',
             document_id: documentId || '',
             focus: (currentMood === 'happiness' || currentMood === 'neutral') ? 90 : 40,
-            distraction: (currentMood === 'surprise' || currentMood === 'fear') ? 80 : 10,
-            struggling: (currentMood === 'anger' || currentMood === 'sadness') ? 85 : 0,
+            // Surprise or disgust maps to distraction (losing focus on the study material)
+            distraction: (currentMood === 'surprise' || currentMood === 'disgust') ? 80 : 10,
+            // Anger, sadness, and fear map to struggling
+            struggling: (currentMood === 'anger' || currentMood === 'sadness' || currentMood === 'fear') ? 85 : 0,
             mood: currentMood,
-            mood_confidence: Math.floor(maxProb * 100) || 100,
+            mood_confidence: Math.floor(maxProb) || 0,
             tiredness: isBlinking ? 80 : 5,
+            talking: sdkData.talking || false
           };
+
+          isSdkTalkingRef.current = sdkData.talking || false;
 
           setFocusMetrics(updatedMetrics);
 
           if (updatedMetrics.struggling > 50) {
             setAvatarEmotion('sad');
-          } else if (updatedMetrics.distraction > 50) {
-            setAvatarEmotion('angry');
+            strugglingScoreRef.current += 1;
+            if (strugglingScoreRef.current >= 100) { // 10 seconds at 10fps
+              strugglingScoreRef.current = 0;
+              if (currentAudioRef.current?.paused ?? true) {
+                const msgs = [
+                  "Do you need any help with this material?",
+                  "You look a bit confused. Want me to explain it differently?",
+                  "If this is too difficult, we can break it down into smaller steps."
+                ];
+                const msg = msgs[Math.floor(Math.random() * msgs.length)];
+                const tempAvatarMsg: ChatMessage = { id: Math.random().toString(), quest_id: '', role: 'avatar', text: msg, created_at: new Date().toISOString() };
+                setMessages(prev => [...prev, tempAvatarMsg]);
+                api.injectChatMessage('', documentId || '', msg).catch(err => console.error('Failed to inject TTS message:', err));
+                playTTS(msg);
+              }
+            }
           } else {
+            strugglingScoreRef.current = Math.max(0, strugglingScoreRef.current - 1);
+          }
+
+          if (updatedMetrics.distraction > 50) {
+            setAvatarEmotion('angry');
+            distractionScoreRef.current += 1;
+            if (distractionScoreRef.current >= 100) { // 10 seconds at 10fps
+              distractionScoreRef.current = 0;
+              if (currentAudioRef.current?.paused ?? true) {
+                const msgs = [
+                  "Hey, are you still paying attention to the material?",
+                  "Let's try to focus on this section for a bit longer.",
+                  "Don't lose focus now, you're doing great!"
+                ];
+                const msg = msgs[Math.floor(Math.random() * msgs.length)];
+                const tempAvatarMsg: ChatMessage = { id: Math.random().toString(), quest_id: '', role: 'avatar', text: msg, created_at: new Date().toISOString() };
+                setMessages(prev => [...prev, tempAvatarMsg]);
+                api.injectChatMessage('', documentId || '', msg).catch(err => console.error('Failed to inject TTS message:', err));
+                playTTS(msg);
+              }
+            }
+          } else {
+            distractionScoreRef.current = Math.max(0, distractionScoreRef.current - 1);
+          }
+
+          if (updatedMetrics.struggling <= 50 && updatedMetrics.distraction <= 50) {
             setAvatarEmotion('neutral');
           }
         }
@@ -689,7 +776,9 @@ export const StudyRoom: React.FC = () => {
   useEffect(() => {
     if (!documentId || !cameraActive) return;
 
-    const interval = setInterval(() => {
+    // Send frames to Node at a reasonable rate (10fps) to avoid WebSocket overload.
+    // The Node.js server will upsample these to 30fps internally for the SDK.
+    const frameInterval = setInterval(() => {
       // Extract frame from video and send over WebSocket
       if (wsRef.current?.readyState === WebSocket.OPEN && videoRef.current && canvasRef.current) {
         const video = videoRef.current;
@@ -702,18 +791,22 @@ export const StudyRoom: React.FC = () => {
           wsRef.current.send(imageData.data.buffer);
         }
       }
+    }, 100);
 
-      // Also send the latest focusMetrics state to the FastAPI backend
+    const apiInterval = setInterval(() => {
+      // Send the latest focusMetrics state to the FastAPI backend
       setFocusMetrics(prevMetrics => {
         if (prevMetrics) {
           api.sendFocusEvent(prevMetrics).catch((err) => console.error('Error posting focus metrics:', err));
         }
         return prevMetrics;
       });
-
     }, 5000);
 
-    return () => clearInterval(interval);
+    return () => {
+        clearInterval(frameInterval);
+        clearInterval(apiInterval);
+    };
   }, [documentId, cameraActive]);
 
   // Handle camera toggle
@@ -723,6 +816,7 @@ export const StudyRoom: React.FC = () => {
       if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled;
         setCameraActive(videoTrack.enabled);
+        cameraActiveRef.current = videoTrack.enabled;
       }
     }
   };
@@ -741,29 +835,36 @@ export const StudyRoom: React.FC = () => {
   const playTTS = async (textToSpeak: string) => {
     if (!ttsActive) return;
     try {
-      const ttsRes = await fetch('http://localhost:8000/chat/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToSpeak })
-      });
-      if (ttsRes.ok) {
-        const blob = await ttsRes.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        
-        audio.onplay = () => setIsAvatarTalking(true);
-        audio.onended = () => setIsAvatarTalking(false);
-        audio.onpause = () => setIsAvatarTalking(false);
-
-        if (currentAudioRef.current) {
-          currentAudioRef.current.pause();
-          currentAudioRef.current.currentTime = 0;
+      let url = ttsCacheRef.current[textToSpeak];
+      
+      if (!url) {
+        const ttsRes = await fetch('http://localhost:8000/chat/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: textToSpeak })
+        });
+        if (ttsRes.ok) {
+          const blob = await ttsRes.blob();
+          url = URL.createObjectURL(blob);
+          ttsCacheRef.current[textToSpeak] = url;
+        } else {
+          console.error("TTS fetch failed with status:", ttsRes.status);
+          return;
         }
-        currentAudioRef.current = audio;
-        audio.play().catch(err => console.error("Audio playback blocked/failed:", err));
-      } else {
-        console.error("TTS fetch failed with status:", ttsRes.status);
       }
+
+      const audio = new Audio(url);
+      
+      audio.onplay = () => setIsAvatarTalking(true);
+      audio.onended = () => setIsAvatarTalking(false);
+      audio.onpause = () => setIsAvatarTalking(false);
+
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
+      }
+      currentAudioRef.current = audio;
+      audio.play().catch(err => console.error("Audio playback blocked/failed:", err));
     } catch (err) {
       console.error("TTS fetch failed", err);
     }
@@ -811,6 +912,7 @@ export const StudyRoom: React.FC = () => {
   // VAD Mic Audio Capture for Whisper
   useEffect(() => {
     if (micActive && mediaStream) {
+      let isCancelled = false;
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
@@ -830,7 +932,10 @@ export const StudyRoom: React.FC = () => {
         const sum = dataArray.reduce((a, b) => a + b, 0);
         const avg = sum / dataArray.length;
 
-        if (avg > 15) { // Speech detected threshold
+        // If camera is on, use SmartSpectra mouth movement. Otherwise fallback to raw volume.
+        const speechDetected = cameraActive ? (isSdkTalkingRef.current && avg > 2) : (avg > 15);
+
+        if (speechDetected) { // Speech detected threshold
           // Interrupt LLM/TTS
           if (currentAudioRef.current && !currentAudioRef.current.paused) {
             currentAudioRef.current.pause();
@@ -854,6 +959,7 @@ export const StudyRoom: React.FC = () => {
               if (e.data.size > 0) audioChunksRef.current.push(e.data);
             };
             mediaRecorderRef.current.onstop = async () => {
+              if (isCancelled) return; // Do not send audio if muted or unmounted
               const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
               const formData = new FormData();
               formData.append('file', audioBlob, 'speech.webm');
@@ -904,11 +1010,21 @@ export const StudyRoom: React.FC = () => {
       checkVolume();
 
       return () => {
+        isCancelled = true;
         cancelAnimationFrame(recordingInterval);
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
           mediaRecorderRef.current.stop();
         }
+        if (recognitionRef.current) {
+          try { recognitionRef.current.stop(); } catch (e) { }
+        }
+        setIsUserSpeaking(false);
       };
+    } else {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) { }
+      }
+      setIsUserSpeaking(false);
     }
   }, [micActive, mediaStream]);
 
@@ -1112,6 +1228,14 @@ export const StudyRoom: React.FC = () => {
                         <div style={{ width: `${focusMetrics.tiredness}%`, height: '100%', backgroundColor: 'var(--c-burnt-orange)' }}></div>
                       </div>
                     </div>
+                    <div style={{ marginBottom: '15px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '2px' }}>
+                        <strong>Talking (SDK)</strong>
+                        <span style={{ color: focusMetrics.talking ? 'var(--c-sage-dark)' : 'var(--c-coral)' }}>
+                          {focusMetrics.talking ? 'YES' : 'NO'}
+                        </span>
+                      </div>
+                    </div>
 
                     <div style={{ borderTop: '2px dashed #ccc', paddingTop: '10px', marginBottom: '5px', fontSize: '1.1rem', display: 'flex', justifyContent: 'space-between' }}>
                       <strong>Primary Mood:</strong>
@@ -1155,6 +1279,13 @@ export const StudyRoom: React.FC = () => {
                 <StreamingBubble
                   text={sessionStartIndex !== null && messages.length > 0 && messages.length - 1 >= sessionStartIndex && messages[messages.length - 1].role === 'avatar' ? messages[messages.length - 1].text : undefined}
                   isProjector={sessionStartIndex !== null && messages.length > 0 && messages.length - 1 >= sessionStartIndex && messages[messages.length - 1].role === 'avatar' && messages[messages.length - 1].text.length > maxProjectorChars}
+                  onDismiss={() => {
+                    if (currentAudioRef.current && !currentAudioRef.current.paused) {
+                      currentAudioRef.current.pause();
+                      currentAudioRef.current.currentTime = 0;
+                    }
+                    setIsAvatarTalking(false);
+                  }}
                 />
               )}
 

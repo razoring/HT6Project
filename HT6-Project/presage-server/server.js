@@ -4,6 +4,10 @@ require('dotenv').config({ path: '../../backend/.env' });
 const { SmartSpectraSDK, PixelFormat, faceMetrics, setMetricsClass, decodeMetrics } = require('@smartspectra/node-sdk');
 const { Metrics } = require('@smartspectra/node-sdk/messages');
 
+const fs = require('fs');
+const path = require('path');
+const { preconfigure } = require('@smartspectra/node-sdk/js/ffi');
+
 const PORT = 8080;
 const wss = new WebSocket.Server({ port: PORT });
 console.log(`Presage SmartSpectra WebSocket server started on ws://localhost:${PORT}`);
@@ -12,6 +16,12 @@ setMetricsClass(Metrics);
 
 let sdk = null;
 try {
+    const cacheDir = path.join(__dirname, '.cache');
+    if (!fs.existsSync(cacheDir)) {
+        fs.mkdirSync(cacheDir, { recursive: true });
+    }
+    preconfigure(cacheDir);
+
     sdk = new SmartSpectraSDK({ 
         apiKey: process.env.PRESAGE,
         requestedMetrics: faceMetrics
@@ -30,7 +40,7 @@ try {
                 const lastTalk = data.face.talking?.length ? data.face.talking[data.face.talking.length - 1] : null;
 
                 // Build expressions dictionary based on whatever the protobuf returns
-                let expressions = { neutral: 1.0 };
+                let expressions = { neutral: 100.0 };
                 if (lastExpr && lastExpr.scores) {
                     expressions = {
                         neutral: 0, happiness: 0, sadness: 0, anger: 0,
@@ -74,22 +84,33 @@ try {
     console.error("Failed to initialize Presage SDK:", e);
 }
 
+let syntheticTimestampUs = 0;
+let lastFrameBuffer = null;
+
+// The SDK crashes if it doesn't receive frames at a steady >=20 FPS wall-clock rate.
+// To isolate it from WebSocket jitter and React rendering pauses, we run a dedicated 30FPS
+// loop in Node that continually feeds it the last received frame.
+setInterval(() => {
+    if (sdk && lastFrameBuffer) {
+        try {
+            const width = 640;
+            const height = 480;
+            const stride = width * 4;
+            syntheticTimestampUs += 33333; 
+            sdk.sendFrame(lastFrameBuffer, width, height, stride, PixelFormat.kRGBA, syntheticTimestampUs);
+        } catch (error) {
+            console.error("Error sending frame to SDK:", error);
+        }
+    }
+}, 33);
+
 wss.on('connection', (ws) => {
     console.log('React Client connected to Presage Server.');
 
     ws.on('message', async (message, isBinary) => {
-        if (isBinary && sdk) {
-            try {
-                // message is a Buffer containing RGBA data (640x480 * 4 = 1228800 bytes)
-                const width = 640;
-                const height = 480;
-                const stride = width * 4;
-                const timestampUs = Date.now() * 1000;
-                
-                sdk.sendFrame(message, width, height, stride, PixelFormat.kRGBA, timestampUs);
-            } catch (error) {
-                console.error("Error sending frame to SDK:", error);
-            }
+        if (isBinary) {
+            // Just update the latest frame, let the interval handle submission
+            lastFrameBuffer = message;
         }
     });
 
