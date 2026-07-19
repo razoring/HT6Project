@@ -56,7 +56,7 @@ class TTSRequest(BaseModel):
 def get_tts(req: TTSRequest):
     from app.config import settings
     # Rachel voice ID (default)
-    url = "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM"
+    url = "https://api.elevenlabs.io/v1/text-to-speech/Xb7hH8MSUJpSbSDYk0k2"
     print("ElevenLabs API Key loaded:", repr(settings.eleven_labs))
     headers = {
         "Accept": "audio/mpeg",
@@ -65,7 +65,7 @@ def get_tts(req: TTSRequest):
     }
     data = {
         "text": req.text,
-        "model_id": "eleven_monolingual_v1"
+        "model_id": "eleven_flash_v2_5"
     }
     response = requests.post(url, json=data, headers=headers)
     if response.status_code == 200:
@@ -73,4 +73,36 @@ def get_tts(req: TTSRequest):
     else:
         print(f"ElevenLabs TTS Error: {response.status_code} - {response.text}")
         return Response(status_code=response.status_code, content=response.text)
+import whisper
+import tempfile
+import os
+from fastapi import UploadFile, File
 
+# Load whisper model globally (lazy load inside endpoint is also fine, but let's do lazy load to speed up startup)
+whisper_model = None
+
+@router.post("/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    global whisper_model
+    if whisper_model is None:
+        print("Loading Whisper model...")
+        whisper_model = whisper.load_model("tiny")
+    
+    # Save the incoming WebM/audio file temporarily
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        # Transcribe
+        result = whisper_model.transcribe(tmp_path)
+        text = result.get("text", "").strip()
+    except Exception as e:
+        print(f"Whisper Transcription Error: {e}")
+        text = ""
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    return {"text": text}

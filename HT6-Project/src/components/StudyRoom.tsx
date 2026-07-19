@@ -23,9 +23,10 @@ interface BunnyProps {
   emotion: 'neutral' | 'angry' | 'sad';
   triggerProjector?: boolean;
   isThinking?: boolean;
+  isTalking?: boolean;
 }
 
-const BunnyModel: React.FC<BunnyProps> = ({ emotion, triggerProjector, isThinking }) => {
+const BunnyModel: React.FC<BunnyProps> = ({ emotion, triggerProjector, isThinking, isTalking }) => {
   const { scene } = useGLTF('/bunny.glb?v=8');
   const clonedScene = React.useMemo(() => SkeletonUtils.clone(scene), [scene]);
   const modelRef = useRef<THREE.Group>(null);
@@ -171,9 +172,16 @@ const BunnyModel: React.FC<BunnyProps> = ({ emotion, triggerProjector, isThinkin
       if (isThinking) {
         headBone.current.rotation.y = THREE.MathUtils.lerp(headBone.current.rotation.y, 0.2 + Math.sin(t * 0.4) * 0.03, delta * 5);
         headBone.current.rotation.z = THREE.MathUtils.lerp(headBone.current.rotation.z, Math.PI / 8 + Math.cos(t * 0.6) * 0.02, delta * 5);
+        headBone.current.rotation.x = THREE.MathUtils.lerp(headBone.current.rotation.x, 0, delta * 5);
+      } else if (isTalking) {
+        // Head bobs up and down when talking
+        headBone.current.rotation.x = Math.sin(t * 15) * 0.05;
+        headBone.current.rotation.y = Math.sin(t * 0.4) * 0.03;
+        headBone.current.rotation.z = Math.cos(t * 0.6) * 0.02;
       } else {
         headBone.current.rotation.y = THREE.MathUtils.lerp(headBone.current.rotation.y, Math.sin(t * 0.4) * 0.03, delta * 5);
         headBone.current.rotation.z = THREE.MathUtils.lerp(headBone.current.rotation.z, Math.cos(t * 0.6) * 0.02, delta * 5);
+        headBone.current.rotation.x = THREE.MathUtils.lerp(headBone.current.rotation.x, 0, delta * 5);
       }
     }
 
@@ -338,9 +346,10 @@ interface StreamingBubbleProps {
   forceShow?: boolean;
   onDismiss?: () => void;
   children?: React.ReactNode;
+  isLive?: boolean;
 }
 
-const StreamingBubble: React.FC<StreamingBubbleProps> = ({ text, isProjector, forceShow, onDismiss, children }) => {
+const StreamingBubble: React.FC<StreamingBubbleProps> = ({ text, isProjector, forceShow, onDismiss, children, isLive }) => {
   const [displayed, setDisplayed] = useState('');
   const [dismissedText, setDismissedText] = useState<string | null>(null);
   const [showProjector, setShowProjector] = useState(false);
@@ -359,6 +368,10 @@ const StreamingBubble: React.FC<StreamingBubbleProps> = ({ text, isProjector, fo
       setDisplayed('');
       return;
     }
+    if (isLive) {
+      setDisplayed(text);
+      return;
+    }
     let i = 0;
     setDisplayed('');
     const interval = setInterval(() => {
@@ -367,7 +380,7 @@ const StreamingBubble: React.FC<StreamingBubbleProps> = ({ text, isProjector, fo
       if (i > text.length) clearInterval(interval);
     }, 15);
     return () => clearInterval(interval);
-  }, [text]);
+  }, [text, isLive]);
 
   const isDismissed = text ? text === dismissedText : !forceShow;
   if (!forceShow && (!text || isDismissed)) return null;
@@ -455,6 +468,8 @@ export const StudyRoom: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
 
   // Webcam stream & controls
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -463,6 +478,35 @@ export const StudyRoom: React.FC = () => {
   const [cameraActive, setCameraActive] = useState(true);
   const [micActive, setMicActive] = useState(true);
   const [ttsActive, setTtsActive] = useState(true);
+
+  // VAD logic refs
+  const audioContextRef = useRef<any>(null);
+  const analyserRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<any>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const isSpeakingRef = useRef(false);
+  const silenceTimerRef = useRef<any>(null);
+  const hideBubbleTimerRef = useRef<any>(null);
+  const recognitionRef = useRef<any>(null);
+  const [isAvatarTalking, setIsAvatarTalking] = useState(false);
+
+  // Initialize Web Speech API for live visual feedback
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          transcript += event.results[i][0].transcript;
+        }
+        setLiveTranscript(transcript);
+      };
+      recognitionRef.current = recognition;
+    }
+  }, []);
 
   // Presage SDK tracking metrics
   const [focusMetrics, setFocusMetrics] = useState<FocusEvent>({
@@ -698,28 +742,51 @@ export const StudyRoom: React.FC = () => {
     }
   };
 
-  // Handle chat messaging
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim() || !documentId) return;
+  const playTTS = async (textToSpeak: string) => {
+    if (!ttsActive) return;
+    try {
+      const ttsRes = await fetch('http://localhost:8000/chat/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToSpeak })
+      });
+      if (ttsRes.ok) {
+        const blob = await ttsRes.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        
+        audio.onplay = () => setIsAvatarTalking(true);
+        audio.onended = () => setIsAvatarTalking(false);
+        audio.onpause = () => setIsAvatarTalking(false);
 
-    const userMsg = chatInput.trim();
-    setChatInput('');
+        if (currentAudioRef.current) {
+          currentAudioRef.current.pause();
+          currentAudioRef.current.currentTime = 0;
+        }
+        currentAudioRef.current = audio;
+        audio.play().catch(err => console.error("Audio playback blocked/failed:", err));
+      } else {
+        console.error("TTS fetch failed with status:", ttsRes.status);
+      }
+    } catch (err) {
+      console.error("TTS fetch failed", err);
+    }
+  };
+
+  const sendChatMessageInternal = async (text: string) => {
+    if (!documentId) return;
     setSendingMsg(true);
-
-    // Optimistically add user message to list
     const tempUserMsg: ChatMessage = {
       id: Math.random().toString(),
       quest_id: '',
       role: 'user',
-      text: userMsg,
+      text,
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, tempUserMsg]);
 
     try {
-      const response = await api.sendChatMessage('', documentId, 'mock_user_123', userMsg);
-
+      const response = await api.sendChatMessage('', documentId, 'mock_user_123', text);
       const avatarMsg: ChatMessage = {
         id: Math.random().toString(),
         quest_id: '',
@@ -728,34 +795,126 @@ export const StudyRoom: React.FC = () => {
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, avatarMsg]);
-
-      // ElevenLabs speech output via backend proxy
-      if (ttsActive) {
-        try {
-          const ttsRes = await fetch('http://localhost:8000/chat/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: response.reply })
-          });
-          if (ttsRes.ok) {
-            const blob = await ttsRes.blob();
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            currentAudioRef.current = audio;
-            audio.play().catch(err => console.error("Audio playback blocked/failed:", err));
-          } else {
-            console.error("TTS fetch failed with status:", ttsRes.status);
-          }
-        } catch (err) {
-          console.error("TTS fetch failed", err);
-        }
-      }
+      playTTS(response.reply);
     } catch (err) {
       console.error('Chat query failed:', err);
     } finally {
       setSendingMsg(false);
     }
   };
+
+  // Handle chat messaging
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const userMsg = chatInput.trim();
+    if (!userMsg) return;
+    setChatInput('');
+    sendChatMessageInternal(userMsg);
+  };
+
+  // VAD Mic Audio Capture for Whisper
+  useEffect(() => {
+    if (micActive && mediaStream) {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const ctx = audioContextRef.current;
+      const source = ctx.createMediaStreamSource(mediaStream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      let recordingInterval: number;
+
+      const checkVolume = () => {
+        if (!analyserRef.current || !micActive) return;
+        analyserRef.current.getByteFrequencyData(dataArray);
+        const sum = dataArray.reduce((a, b) => a + b, 0);
+        const avg = sum / dataArray.length;
+
+        if (avg > 15) { // Speech detected threshold
+          // Interrupt LLM/TTS
+          if (currentAudioRef.current && !currentAudioRef.current.paused) {
+            currentAudioRef.current.pause();
+            currentAudioRef.current.currentTime = 0;
+            setSendingMsg(false);
+          }
+
+          if (!isSpeakingRef.current) {
+            isSpeakingRef.current = true;
+            setIsUserSpeaking(true);
+            if (hideBubbleTimerRef.current) {
+              clearTimeout(hideBubbleTimerRef.current);
+            }
+            setLiveTranscript('');
+            if (recognitionRef.current) {
+              try { recognitionRef.current.start(); } catch (e) { }
+            }
+            audioChunksRef.current = [];
+            mediaRecorderRef.current = new MediaRecorder(mediaStream);
+            mediaRecorderRef.current.ondataavailable = (e) => {
+              if (e.data.size > 0) audioChunksRef.current.push(e.data);
+            };
+            mediaRecorderRef.current.onstop = async () => {
+              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+              const formData = new FormData();
+              formData.append('file', audioBlob, 'speech.webm');
+              try {
+                const res = await fetch('http://localhost:8000/chat/transcribe', { method: 'POST', body: formData });
+                if (res.ok) {
+                  const { text } = await res.json();
+                  if (text && text.trim().length > 2) {
+                    sendChatMessageInternal(text.trim());
+                  }
+                }
+              } catch (e) {
+                console.error("Transcribe err", e);
+              }
+            };
+            mediaRecorderRef.current.start();
+          }
+
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+          }
+        } else {
+          // Silence detected
+          if (isSpeakingRef.current) {
+            if (!silenceTimerRef.current) {
+              silenceTimerRef.current = setTimeout(() => {
+                isSpeakingRef.current = false;
+                
+                // Keep the bubble alive for a few more seconds before hiding
+                hideBubbleTimerRef.current = setTimeout(() => {
+                  setIsUserSpeaking(false);
+                }, 3000);
+
+                if (recognitionRef.current) {
+                  try { recognitionRef.current.stop(); } catch (e) { }
+                }
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                  mediaRecorderRef.current.stop();
+                }
+              }, 1200); // 1.2s silence stops recording
+            }
+          }
+        }
+        recordingInterval = requestAnimationFrame(checkVolume);
+      };
+
+      checkVolume();
+
+      return () => {
+        cancelAnimationFrame(recordingInterval);
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        }
+      };
+    }
+  }, [micActive, mediaStream]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', height: '100vh', backgroundColor: 'var(--bg-primary)' }}>
@@ -807,6 +966,9 @@ export const StudyRoom: React.FC = () => {
                 <div style={{ position: 'absolute', inset: 0, backgroundColor: 'var(--c-dark-slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800 }}>
                   Camera Disabled
                 </div>
+              )}
+              {isUserSpeaking && (
+                <StreamingBubble text={liveTranscript ? `${liveTranscript}...` : "Listening..."} isProjector={false} />
               )}
             </div>
 
@@ -900,6 +1062,7 @@ export const StudyRoom: React.FC = () => {
                       emotion={avatarEmotion}
                       triggerProjector={showDebug || (sessionStartIndex !== null && messages.length > 0 && messages.length - 1 >= sessionStartIndex && messages[messages.length - 1].role === 'avatar' && messages[messages.length - 1].text.length > maxProjectorChars)}
                       isThinking={sendingMsg}
+                      isTalking={isAvatarTalking}
                     />
                   </Suspense>
                 </Canvas>
@@ -1002,7 +1165,13 @@ export const StudyRoom: React.FC = () => {
               {/* Debug Menu & Info Button */}
               <div style={{ position: 'absolute', bottom: '10px', right: '10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                 <button
-                  onClick={() => setShowDebug(!showDebug)}
+                  onClick={() => {
+                    const nextState = !showDebug;
+                    setShowDebug(nextState);
+                    if (nextState) {
+                      //playTTS("this is the debugger menu!");
+                    }
+                  }}
                   style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'var(--c-brown-dark)', color: 'white', border: '2px solid var(--c-sand-light)', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'var(--font-retro)' }}
                   title="Debug Info"
                 >
